@@ -18,6 +18,22 @@ namespace matrix
 		}
 
 		matrix = vector<vector<double>>(x, vector<double>(y));
+		parents[0] = nullptr;
+		parents[1] = nullptr;
+	}
+
+	Matrix::Matrix(int x, int y, Matrix* parents[2], Op op)
+	{
+		if (x <= 0 || y <= 0)
+		{
+			cout << "Invalid matrix dimensions.\n";
+			throw std::errc::invalid_argument;
+		}
+
+		matrix = vector<vector<double>>(x, vector<double>(y));
+		this->parents[0] = parents[0];
+		this->parents[1] = parents[1];
+		operation = op;
 	}
 
 	void Matrix::PrintMatrix(const Matrix a)
@@ -48,25 +64,39 @@ namespace matrix
 		}
 	}
 
+	void Matrix::PopulateXavier(Matrix& a, int fanIn, int fanOut)
+	{
+		mt19937 rng(std::random_device{}());
+		double limit = sqrt(6.0 / (a.matrix.size() + a.matrix[0].size()));
+		uniform_real_distribution<double> dist(-limit, limit);
+
+		for (vector<double>& i : a.matrix)
+		{
+			for (double& j : i)
+			{
+				j = dist(rng);
+			}
+		}
+	}
+
 	void Matrix::SetNumThreads(int numThreads)
 	{
 		//Used for evaluating the most optimal thread count for multiplication
 		omp_set_num_threads(numThreads);
 	}
 
-	Matrix Matrix::operator+(Matrix matrix2)
+	Matrix Matrix::operator+(Matrix other)
 	{
-		if (this->matrix.size() == matrix2.matrix.size() && this->matrix[0].size() == matrix2.matrix.size())
+		Matrix* parents[2] = { this, &other };
+		if (this->matrix.size() == other.matrix.size() && this->matrix[0].size() == other.matrix[0].size())
 		{
-			int n = this->matrix.size();
-			int k = this->matrix[0].size();
-			Matrix sum(n, k);
+			Matrix sum(this->matrix.size(), this->matrix[0].size(), parents, Op::ADD);
 
-			for (int row = 0; row < n; row++)
+			for (int row = 0; row < this->matrix.size(); row++)
 			{
-				for (int col = 0; col < k; col++)
+				for (int col = 0; col < this->matrix[0].size(); col++)
 				{
-					sum[row][col] = this->matrix[row][col] + matrix2.matrix[row][col];
+					sum[row][col] = this->matrix[row][col] + other.matrix[row][col];
 				}
 			}
 
@@ -74,11 +104,19 @@ namespace matrix
 		}
 		else if (this->matrix.size() == 1 && this->matrix[0].size() == 1)
 		{
-			return this->matrix[0][0] + matrix2;
+			Matrix returnMe = this->matrix[0][0] + other;
+			returnMe.parents[0] = parents[0];
+			returnMe.parents[1] = parents[1];
+
+			return returnMe;
 		}
-		else if (matrix2.matrix.size() == 1 && matrix2.matrix[0].size() == 1)
+		else if (other.matrix.size() == 1 && other.matrix[0].size() == 1)
 		{
-			return matrix2[0][0] + *this;
+			Matrix returnMe = other[0][0] + *this;
+			returnMe.parents[0] = parents[0];
+			returnMe.parents[1] = parents[1];
+
+			return returnMe;
 		}
 		else
 		{
@@ -113,15 +151,83 @@ namespace matrix
 		return sum;
 	}
 
-	Matrix Matrix::operator*(Matrix matrix2)
+	Matrix Matrix::operator-(Matrix other)
 	{
-		if (this->matrix[0].size() == matrix2.matrix.size())
+		Matrix* parents[2] = { this, &other };
+		if (this->matrix.size() == other.matrix.size() && this->matrix[0].size() == other.matrix[0].size())
+		{
+			Matrix sum(this->matrix.size(), this->matrix[0].size(), parents, Op::SUB);
+
+			for (int row = 0; row < this->matrix.size(); row++)
+			{
+				for (int col = 0; col < this->matrix[0].size(); col++)
+				{
+					sum[row][col] = this->matrix[row][col] - other.matrix[row][col];
+				}
+			}
+
+			return sum;
+		}
+		else if (this->matrix.size() == 1 && this->matrix[0].size() == 1)
+		{
+			Matrix returnMe = this->matrix[0][0] - other;
+			returnMe.parents[0] = parents[0];
+			returnMe.parents[1] = parents[1];
+
+			return returnMe;
+		}
+		else if (other.matrix.size() == 1 && other.matrix[0].size() == 1)
+		{
+			Matrix returnMe = other[0][0] - *this;
+			returnMe.parents[0] = parents[0];
+			returnMe.parents[1] = parents[1];
+
+			return returnMe;
+		}
+		else
+		{
+			cout << "Cannot add different sized matrices.\n";
+			throw std::errc::invalid_argument;
+		}
+	}
+
+	Matrix Matrix::operator-(double val)
+	{
+		Matrix sum = Matrix(this->matrix.size(), this->matrix[0].size());
+		for (int row = 0; row < this->matrix.size(); row++)
+		{
+			for (int col = 0; col < this->matrix[0].size(); col++)
+			{
+				sum[row][col] = this->matrix[row][col] - val;
+			}
+		}
+		return sum;
+	}
+
+	Matrix operator-(double val, Matrix& matrix)
+	{
+		Matrix sum = Matrix(matrix.matrix.size(), matrix.matrix[0].size());
+		for (int row = 0; row < matrix.matrix.size(); row++)
+		{
+			for (int col = 0; col < matrix.matrix[0].size(); col++)
+			{
+				sum[row][col] = val - matrix[row][col];
+			}
+		}
+		return sum;
+	}
+
+	Matrix Matrix::operator*(Matrix other)
+	{
+		if (this->matrix[0].size() == other.matrix.size())
 		{
 			int n = this->matrix.size();
 			int k = this->matrix[0].size();
-			int m = matrix2.matrix[0].size();
+			int m = other.matrix[0].size();
 
-			Matrix productMatrix(n, m);
+			Matrix* parents[2] = { this, &other };
+
+			Matrix productMatrix(n, m, parents, Op::MUL);
 
 #pragma omp parallel for
 			for (int row = 0; row < n; row++)
@@ -132,7 +238,7 @@ namespace matrix
 					double indexVal = 0;
 					for (int ki = 0; ki < k; ki++)
 					{
-						indexVal += this->matrix[row][ki] * matrix2.matrix[ki][col];
+						indexVal += this->matrix[row][ki] * other.matrix[ki][col];
 					}
 
 					//Set the value after the for loop to potentially reduce false sharing
@@ -149,6 +255,30 @@ namespace matrix
 		}
 	}
 
+	Matrix Matrix::operator%(Matrix other)
+	{
+		if (this->matrix.size() == other.matrix.size() && this->matrix[0].size() == other.matrix[0].size())
+		{
+			Matrix productMatrix(this->matrix.size(), this->matrix[0].size());
+			for (int row = 0; row < this->matrix.size(); row++)
+			{
+				for (int col = 0; col < this->matrix[0].size(); col++)
+				{
+					productMatrix[row][col] = this->matrix[row][col] * other.matrix[row][col];
+				}
+			}
+			return productMatrix;
+		}
+	}
+
+	Matrix Matrix::operator=(Matrix other)
+	{
+		this->matrix = other.matrix;
+		this->parents[0] = other.parents[0];
+		this->parents[1] = other.parents[1];
+		return *this;
+	}
+
 	vector<double>& Matrix::operator[] (int index)
 	{
 		if (index < 0 || index >= this->matrix.size()) {
@@ -156,6 +286,91 @@ namespace matrix
 		}
 
 		return this->matrix[index];
+	}
+
+	void Matrix::Backward(const Matrix& upstreamGrad)
+	{
+		if (grad.empty())
+		{
+			grad = upstreamGrad.matrix;
+		}
+		else
+		{
+			for (int row = 0; row < grad.size(); row++)
+			{
+				for (int col = 0; col < grad[0].size(); col++)
+				{
+					grad[row][col] += upstreamGrad[row][col];
+				}
+			}
+		}
+
+		switch (operation)
+		{
+			case Op::ADD:
+				if (parents[0] != nullptr)
+				{
+					parents[0]->Backward(upstreamGrad);
+				}
+				if (parents[1] != nullptr)
+				{
+					parents[1]->Backward(upstreamGrad);
+				}
+				break;
+			case Op::SUB:
+				if (parents[0] != nullptr)
+				{
+					parents[0]->Backward(upstreamGrad);
+				}
+				if (parents[1] != nullptr)
+				{
+					Matrix negUpstreamGrad(upstreamGrad.matrix.size(), upstreamGrad.matrix[0].size());
+					for (int row = 0; row < upstreamGrad.matrix.size(); row++)
+					{
+						for (int col = 0; col < upstreamGrad.matrix[0].size(); col++)
+						{
+							negUpstreamGrad[row][col] = -upstreamGrad.matrix[row][col];
+						}
+					}
+					parents[1]->Backward(negUpstreamGrad);
+				}
+				break;
+			case Op::MUL:
+				if (parents[0] != nullptr)
+				{
+					Matrix grad0 = Transpose(upstreamGrad) * (*parents[1]);
+					parents[0]->Backward(Transpose(grad0));
+				}
+				if (parents[1] != nullptr)
+				{
+					Matrix grad1 = Transpose(*parents[0]) * upstreamGrad;
+					parents[1]->Backward(grad1);
+				}
+				break;
+			case Op::NONE:
+				break;
+		}
+	}
+
+	vector<vector<double>> Matrix::GetGrad()
+	{
+		return grad;
+	}
+
+	vector<vector<double>> Matrix::GetMatrix()
+	{
+		return matrix;
+	}
+
+	void Matrix::ZeroGrad()
+	{
+		for (int row = 0; row < grad.size(); row++)
+		{
+			for (int col = 0; col < grad[0].size(); col++)
+			{
+				grad[row][col] = 0;
+			}
+		}
 	}
 
 	vector<int> Matrix::Dimensions()
@@ -195,5 +410,18 @@ namespace matrix
 		}
 
 		return result;
+	}
+
+	Matrix Matrix::Transpose(const Matrix& matrix)
+	{
+		Matrix transposed = Matrix(matrix.matrix[0].size(), matrix.matrix.size());
+		for (int row = 0; row < matrix.matrix.size(); row++)
+		{
+			for (int col = 0; col < matrix.matrix[0].size(); col++)
+			{
+				transposed[col][row] = matrix.matrix[row][col];
+			}
+		}
+		return transposed;
 	}
 }

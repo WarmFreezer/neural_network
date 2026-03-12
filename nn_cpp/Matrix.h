@@ -9,41 +9,48 @@
 
 namespace matrix
 {
+	enum class Op { ADD, SUB, MUL, NONE };
+
 	class Matrix
 	{
 	public:
 		Matrix(int x, int y);
-
-		Matrix(int x, int y, Matrix* parents[2]);
+		Matrix(int x, int y, Matrix* parents[2], Op op);
 
 		static void PrintMatrix(const Matrix a);
-
 		static void PopulateRand(Matrix& a);
-
+		static void PopulateXavier(Matrix& a, int fanIn, int fanOut);
 		static void SetNumThreads(int numThreads);
 
-		Matrix operator+(Matrix matrix2);
-
+		Matrix operator+(Matrix other);
 		Matrix operator+(double val);
-
 		friend Matrix operator+(double val, Matrix& matrix);
-
-		Matrix operator*(Matrix matrix2);
-
+		Matrix operator-(Matrix other);
+		Matrix operator-(double val);
+		friend Matrix operator-(double val, Matrix& matrix);
+		Matrix operator*(Matrix other);
+		Matrix operator%(Matrix other);
+		Matrix operator=(Matrix other);
 		vector<double>& operator[] (int index);
 
 		vector<int> Dimensions();
+		void Backward(const Matrix& upstreamGrad);
+		vector<vector<double>> GetGrad();
+		vector<vector<double>> GetMatrix();
+		void ZeroGrad();
 
 		template <typename T>
 		static vector<T> Flatten(const vector<vector<T>> v);
 
 		template <typename T>
 		static vector<vector<T>> Gridify(const vector<T> v, int n, int k);
+			
+		static Matrix Transpose(const Matrix& matrix);
 
 	private:
 		vector<vector<double>> matrix;
-
-		// Used for backpropagation to track the parents of the matrix
+		vector<vector<double>> grad;
 		Matrix* parents[2];
+		Op operation = Op::NONE;
 	};
 }
