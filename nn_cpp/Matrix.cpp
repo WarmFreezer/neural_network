@@ -92,9 +92,9 @@ namespace matrix
 		omp_set_num_threads(numThreads);
 	}
 
-	Matrix Matrix::operator+(Matrix other)
+	Matrix Matrix::operator+(const Matrix& other)
 	{
-		Matrix* parents[2] = { this, &other };
+		Matrix* parents[2] = { this, const_cast<Matrix*>(&other) };
 		if (this->matrix.size() == other.matrix.size() && this->matrix[0].size() == other.matrix[0].size())
 		{
 			Matrix sum(this->matrix.size(), this->matrix[0].size(), parents, Op::ADD);
@@ -119,7 +119,7 @@ namespace matrix
 		}
 		else if (other.matrix.size() == 1 && other.matrix[0].size() == 1)
 		{
-			Matrix returnMe = other[0][0] + *this;
+			Matrix returnMe = other.matrix[0][0] + *this;
 			returnMe.parents[0] = parents[0];
 			returnMe.parents[1] = parents[1];
 
@@ -132,7 +132,7 @@ namespace matrix
 		}
 	}
 
-	Matrix Matrix::operator+(double val)
+	Matrix Matrix::operator+(double val) const
 	{
 		Matrix sum = Matrix(this->matrix.size(), this->matrix[0].size());
 		for (int row = 0; row < this->matrix.size(); row++)
@@ -145,7 +145,7 @@ namespace matrix
 		return sum;
 	}
 
-	Matrix operator+(double val, Matrix& matrix)
+	Matrix operator+(double val, const Matrix& matrix)
 	{
 		Matrix sum = Matrix(matrix.matrix.size(), matrix.matrix[0].size());
 		for (int row = 0; row < matrix.matrix.size(); row++)
@@ -158,22 +158,22 @@ namespace matrix
 		return sum;
 	}
 
-	Matrix Matrix::operator-(Matrix other)
+	Matrix Matrix::operator-(const Matrix& other)
 	{
-		Matrix* parents[2] = { this, &other };
+		Matrix* parents[2] = { this, const_cast<Matrix*>(&other)};
 		if (this->matrix.size() == other.matrix.size() && this->matrix[0].size() == other.matrix[0].size())
 		{
-			Matrix sum(this->matrix.size(), this->matrix[0].size(), parents, Op::SUB);
+			Matrix diff(this->matrix.size(), this->matrix[0].size(), parents, Op::SUB);
 
 			for (int row = 0; row < this->matrix.size(); row++)
 			{
 				for (int col = 0; col < this->matrix[0].size(); col++)
 				{
-					sum[row][col] = this->matrix[row][col] - other.matrix[row][col];
+					diff[row][col] = this->matrix[row][col] - other.matrix[row][col];
 				}
 			}
 
-			return sum;
+			return diff;
 		}
 		else if (this->matrix.size() == 1 && this->matrix[0].size() == 1)
 		{
@@ -185,7 +185,7 @@ namespace matrix
 		}
 		else if (other.matrix.size() == 1 && other.matrix[0].size() == 1)
 		{
-			Matrix returnMe = other[0][0] - *this;
+			Matrix returnMe = other.matrix[0][0] - *this;
 			returnMe.parents[0] = parents[0];
 			returnMe.parents[1] = parents[1];
 
@@ -198,33 +198,33 @@ namespace matrix
 		}
 	}
 
-	Matrix Matrix::operator-(double val)
+	Matrix Matrix::operator-(double val) const
 	{
-		Matrix sum = Matrix(this->matrix.size(), this->matrix[0].size());
+		Matrix diff = Matrix(this->matrix.size(), this->matrix[0].size());
 		for (int row = 0; row < this->matrix.size(); row++)
 		{
 			for (int col = 0; col < this->matrix[0].size(); col++)
 			{
-				sum[row][col] = this->matrix[row][col] - val;
+				diff[row][col] = this->matrix[row][col] - val;
 			}
 		}
-		return sum;
+		return diff;
 	}
 
-	Matrix operator-(double val, Matrix& matrix)
+	Matrix operator-(double val, const Matrix& matrix)
 	{
-		Matrix sum = Matrix(matrix.matrix.size(), matrix.matrix[0].size());
-		for (int row = 0; row < matrix.matrix.size(); row++)
+		Matrix diff = Matrix(matrix.GetMatrix().size(), matrix.GetMatrix()[0].size());
+		for (int row = 0; row < matrix.GetMatrix().size(); row++)
 		{
-			for (int col = 0; col < matrix.matrix[0].size(); col++)
+			for (int col = 0; col < matrix.GetMatrix()[0].size(); col++)
 			{
-				sum[row][col] = val - matrix[row][col];
+				diff[row][col] = val - matrix.GetMatrix()[row][col];
 			}
 		}
-		return sum;
+		return diff;
 	}
 
-	Matrix Matrix::operator*(Matrix other)
+	Matrix Matrix::operator*(const Matrix& other)
 	{
 		if (this->matrix[0].size() == other.matrix.size())
 		{
@@ -232,7 +232,7 @@ namespace matrix
 			int k = this->matrix[0].size();
 			int m = other.matrix[0].size();
 
-			Matrix* parents[2] = { this, &other };
+			Matrix* parents[2] = { this, const_cast<Matrix*>(&other)};
 
 			Matrix productMatrix(n, m, parents, Op::MUL);
 
@@ -262,6 +262,32 @@ namespace matrix
 		}
 	}
 
+	Matrix Matrix::operator*(double other)
+	{
+		Matrix productMatrix = Matrix(this->matrix.size(), this->matrix[0].size());
+		for (int row = 0; row < this->matrix.size(); row++)
+		{
+			for (int col = 0; col < this->matrix[0].size(); col++)
+			{
+				productMatrix[row][col] = this->matrix[row][col] * other;
+			}
+		}
+		return productMatrix;
+	}
+
+	Matrix operator*(double val, Matrix other)
+	{
+		Matrix productMatrix = Matrix(other.matrix.size(), other.matrix[0].size());
+		for (int row = 0; row < other.matrix.size(); row++)
+		{
+			for (int col = 0; col < other.matrix[0].size(); col++)
+			{
+				productMatrix[row][col] = other.matrix[row][col] * val;
+			}
+		}
+		return productMatrix;
+	}
+
 	Matrix Matrix::operator%(Matrix other)
 	{
 		if (this->matrix.size() == other.matrix.size() && this->matrix[0].size() == other.matrix[0].size())
@@ -275,6 +301,10 @@ namespace matrix
 				}
 			}
 			return productMatrix;
+		}
+		else
+		{
+			throw std::errc::invalid_argument;
 		}
 	}
 
@@ -307,7 +337,7 @@ namespace matrix
 			{
 				for (int col = 0; col < grad[0].size(); col++)
 				{
-					grad[row][col] += upstreamGrad[row][col];
+					grad[row][col] += upstreamGrad.matrix[row][col];
 				}
 			}
 		}

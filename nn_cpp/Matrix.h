@@ -23,13 +23,15 @@ namespace matrix
 		static void PopulateXavier(Matrix& a, int fanIn, int fanOut);
 		static void SetNumThreads(int numThreads);
 
-		Matrix operator+(Matrix other);
-		Matrix operator+(double val);
-		friend Matrix operator+(double val, Matrix& matrix);
-		Matrix operator-(Matrix other);
-		Matrix operator-(double val);
-		friend Matrix operator-(double val, Matrix& matrix);
-		Matrix operator*(Matrix other);
+		Matrix operator+(const Matrix& other);
+		Matrix operator+(double val) const;
+		friend Matrix operator+(double val, const Matrix& matrix);
+		Matrix operator-(const Matrix& other);
+		Matrix operator-(double val) const;
+		friend Matrix operator-(double val, const Matrix& matrix);
+		Matrix operator*(const Matrix& other);
+		Matrix operator*(double other);
+		friend Matrix operator*(double val, Matrix other);
 		Matrix operator%(Matrix other);
 		Matrix operator=(Matrix other);
 		vector<double>& operator[] (int index);

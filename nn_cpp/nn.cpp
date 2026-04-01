@@ -30,12 +30,14 @@ public:
 		return (weights * input) + bias;
 	}
 
-	Matrix Backward(const Matrix& grad, double learningRate)
+	Matrix Backward(Matrix& grad, double learningRate)
 	{
 		Matrix weightGrad = grad * Matrix::Transpose(lastInput);
 		Matrix biasGrad = grad;
 		weights = weights - (learningRate * weightGrad);
 		bias = bias - (learningRate * biasGrad);
+
+		return Matrix::Transpose(weights) * grad;
 	}
 };
 
@@ -45,6 +47,31 @@ public:
 	ActivationType type;
 	Matrix lastInput;
 	Matrix lastOutput;
+
+	Activation()
+	{
+		type = ActivationType::None;
+	}
+
+	Activation(std::string type)
+	{
+		if (type == "RELU")
+		{
+			this->type = ActivationType::RELU;
+		}
+		else if (type == "SIGMOID")
+		{
+			this->type = ActivationType::SIGMOID;
+		}
+		else if (type == "TANH")
+		{
+			this->type = ActivationType::TANH;
+		}
+		else
+		{
+			this->type = ActivationType::None;
+		}
+	}
 
 	Matrix Forward(const Matrix& input)
 	{
@@ -186,13 +213,14 @@ private:
 
 		return out;
 	}
-}
+};
 
 class DenseLayer
 {
 public:
 	Matrix weights;
 	Matrix bias;
+	Matrix lastInput;
 	Activation activation;
 
 	DenseLayer(int inFeatures, int outFeatures, Activation activation)
@@ -204,20 +232,24 @@ public:
 		this->activation = activation;
 	}
 
-	Matrix forward(const Matrix& input)
+	Matrix Forward(const Matrix& input)
 	{
+		lastInput = input;
 		Matrix linearOutput = (weights * input) + bias;
-		switch (activation.type)
-		{
-		case ActivationType::RELU:
-			return activation.ReLU(linearOutput);
-		case ActivationType::SIGMOID:
-			return activation.Sigmoid(linearOutput);
-		case ActivationType::TANH:
-			return activation.TanH(linearOutput);
-		default:
-			return linearOutput;
-		}
+		return activation.Forward(linearOutput);
+	}
+
+	Matrix Backward(const Matrix& grad, double learningRate)
+	{
+		Matrix activationGrad = activation.Backward(grad);
+		
+		Matrix weightGrad = activationGrad * Matrix::Transpose(lastInput);
+		Matrix biasGrad = activationGrad;
+		
+		weights = weights - (learningRate * weightGrad);
+		bias = bias - (learningRate * biasGrad);
+		
+		return Matrix::Transpose(weights) * activationGrad;
 	}
 };
 
