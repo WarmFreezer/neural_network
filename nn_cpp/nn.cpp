@@ -32,7 +32,7 @@ public:
 
 	Matrix Backward(const Matrix& grad, double learningRate)
 	{
-		Matrix weightGrad = grad * Transpose(lastInput);
+		Matrix weightGrad = grad * Matrix::Transpose(lastInput);
 		Matrix biasGrad = grad;
 		weights = weights - (learningRate * weightGrad);
 		bias = bias - (learningRate * biasGrad);

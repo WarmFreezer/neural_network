@@ -14,6 +14,7 @@ namespace matrix
 	class Matrix
 	{
 	public:
+		Matrix();
 		Matrix(int x, int y);
 		Matrix(int x, int y, Matrix* parents[2], Op op);
 
@@ -33,10 +34,10 @@ namespace matrix
 		Matrix operator=(Matrix other);
 		vector<double>& operator[] (int index);
 
-		vector<int> Dimensions();
+		vector<int> Dimensions() const;
 		void Backward(const Matrix& upstreamGrad);
-		vector<vector<double>> GetGrad();
-		vector<vector<double>> GetMatrix();
+		vector<vector<double>> GetGrad() const;
+		vector<vector<double>> GetMatrix() const;
 		void ZeroGrad();
 
 		template <typename T>

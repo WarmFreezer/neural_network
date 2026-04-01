@@ -9,6 +9,13 @@
 using namespace std;
 namespace matrix
 {
+	Matrix::Matrix()
+	{
+		matrix = vector<vector<double>>();
+		parents[0] = nullptr;
+		parents[1] = nullptr;
+	}
+
 	Matrix::Matrix(int x, int y)
 	{
 		if (x <= 0 || y <= 0)
@@ -352,12 +359,12 @@ namespace matrix
 		}
 	}
 
-	vector<vector<double>> Matrix::GetGrad()
+	vector<vector<double>> Matrix::GetGrad() const
 	{
 		return grad;
 	}
 
-	vector<vector<double>> Matrix::GetMatrix()
+	vector<vector<double>> Matrix::GetMatrix() const
 	{
 		return matrix;
 	}
@@ -373,7 +380,7 @@ namespace matrix
 		}
 	}
 
-	vector<int> Matrix::Dimensions()
+	vector<int> Matrix::Dimensions() const
 	{
 		vector<int> dimensions;
 		dimensions.push_back(this->matrix.size()); //Rows
