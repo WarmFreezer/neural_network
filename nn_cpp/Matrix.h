@@ -34,6 +34,7 @@ namespace matrix
 		friend Matrix operator*(double val, Matrix other);
 		Matrix operator%(Matrix other);
 		Matrix operator=(Matrix other);
+		const vector<double>& operator[] (int index) const;
 		vector<double>& operator[] (int index);
 
 		vector<int> Dimensions() const;

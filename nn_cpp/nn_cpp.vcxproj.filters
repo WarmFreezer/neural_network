@@ -30,4 +30,10 @@
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="Thyroid\ann-Readme" />
+    <None Include="Thyroid\ann-test.data" />
+    <None Include="Thyroid\ann-thyroid.names" />
+    <None Include="Thyroid\ann-train.data" />
+  </ItemGroup>
 </Project>

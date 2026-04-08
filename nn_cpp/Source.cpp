@@ -1,5 +1,7 @@
 #include <iostream>
 #include <cassert>
+#include <fstream>
+#include <sstream>
 
 #include "nn.cpp"
 #include "Matrix.h"
@@ -7,148 +9,141 @@
 using namespace std;
 using namespace matrix;
 
-void TestMatrixAddition()
+vector<pair<Matrix, int>> LoadData(string filename)
 {
-	Matrix a(2, 2);
-	Matrix b(2, 2);
-	a[0][0] = 1; a[0][1] = 2;
-	a[1][0] = 3; a[1][1] = 4;
-	b[0][0] = 5; b[0][1] = 6;
-	b[1][0] = 7; b[1][1] = 8;
+	vector <pair<Matrix, int>> data;
 
-	Matrix c = a + b;
-	assert(c[0][0] == 6 && c[0][1] == 8);
-	cout << "✓ Matrix Addition Test Passed\n";
-}
+	ifstream file(filename);
+	string line;
 
-void TestMatrixMultiplication()
-{
-	Matrix a(2, 3);
-	Matrix b(3, 2);
+	while (getline(file, line))
+	{
+		if (line.empty()) continue;
 
-	// Fill with known values
-	for (int i = 0; i < 2; i++)
-		for (int j = 0; j < 3; j++)
-			a[i][j] = 1;
-	for (int i = 0; i < 3; i++)
-		for (int j = 0; j < 2; j++)
-			b[i][j] = 1;
+		istringstream iss(line);
+		vector<double> values;
+		double val;
 
-	Matrix c = a * b;
-	assert(c[0][0] == 3 && c[1][1] == 3);
-	cout << "✓ Matrix Multiplication Test Passed\n";
-}
+		while (iss >> val)
+		{
+			values.push_back(val);
+		}
 
-void TestMatrixTranspose()
-{
-	Matrix a(2, 3);
-	a[0][0] = 1; a[0][1] = 2; a[0][2] = 3;
-	a[1][0] = 4; a[1][1] = 5; a[1][2] = 6;
+		if (values.size() == 22)
+		{
+			Matrix input(21, 1);
+			for (int i = 0; i < 21; i++)
+			{
+				input[i][0] = values[i];
+			}
 
-	Matrix t = Matrix::Transpose(a);
-	assert(t.Dimensions()[0] == 3 && t.Dimensions()[1] == 2);
-	assert(t[0][0] == 1 && t[1][0] == 2 && t[2][0] == 3);
-	cout << "✓ Matrix Transpose Test Passed\n";
-}
+			data.push_back({ input, (int)values[21] });
+		}
+	}
 
-void TestLinearLayerForward()
-{
-	LinearLayer layer(3, 2);
-	Matrix input(3, 1);
-	input[0][0] = 1; input[1][0] = 2; input[2][0] = 3;
-
-	Matrix output = layer.Forward(input);
-	assert(output.Dimensions()[0] == 2 && output.Dimensions()[1] == 1);
-	cout << "✓ Linear Layer Forward Test Passed\n";
-}
-
-void TestActivationFunctions()
-{
-	Matrix input(2, 2);
-	input[0][0] = 0;    input[0][1] = 1;
-	input[1][0] = -1;   input[1][1] = 2;
-
-	Activation relu("RELU");
-	Matrix reluOut = relu.Forward(input);
-	assert(reluOut[0][0] == 0 && reluOut[0][1] == 1);
-	assert(reluOut[1][0] == 0 && reluOut[1][1] == 2);
-	cout << "✓ ReLU Activation Test Passed\n";
-
-	Activation sigmoid("SIGMOID");
-	Matrix sigmoidOut = sigmoid.Forward(input);
-	assert(sigmoidOut[0][0] > 0 && sigmoidOut[0][0] < 1);
-	cout << "✓ Sigmoid Activation Test Passed\n";
-}
-
-void NumericalGradientCheck()
-{
-	Matrix a(2, 2);
-	Matrix b(2, 2);
-	Matrix::PopulateRand(a);
-	Matrix::PopulateRand(b);
-
-	double epsilon = 1e-5;
-
-	// Numerical gradient for a[0][0]
-	a[0][0] += epsilon;
-	Matrix f_plus = a * b;
-	a[0][0] -= 2 * epsilon;
-	Matrix f_minus = a * b;
-
-	double numericalGrad = (f_plus[0][0] - f_minus[0][0]) / (2 * epsilon);
-	cout << "Numerical Gradient: " << numericalGrad << "\n";
-	cout << "✓ Gradient Checking Setup Complete\n";
-}
-
-void TestSimpleNetwork()
-{
-	cout << "\n=== Simple Network Test ===\n";
-
-	// Create layers
-	Activation relu("RELU");
-	DenseLayer layer1(2, 4, relu);
-
-	Activation none("NONE");
-	DenseLayer layer2(4, 1, none);
-
-	// Create dummy input (batch_size=1, features=2)
-	Matrix input(2, 1);
-	input[0][0] = 0.5;
-	input[1][0] = -0.3;
-
-	// Forward pass
-	Matrix hidden = layer1.Forward(input);
-	Matrix output = layer2.Forward(hidden);
-
-	cout << "Input dims: " << input.Dimensions()[0] << "x" << input.Dimensions()[1] << "\n";
-	cout << "Output dims: " << output.Dimensions()[0] << "x" << output.Dimensions()[1] << "\n";
-	cout << "✓ Simple Network Forward Pass Complete\n";
-
-	// Backward pass (dummy gradient)
-	Matrix lossGrad(1, 1);
-	lossGrad[0][0] = 0.1;
-
-	Matrix grad2 = layer2.Backward(lossGrad, 0.01);
-	Matrix grad1 = layer1.Backward(grad2, 0.01);
-
-	cout << "✓ Simple Network Backward Pass Complete\n";
+	file.close();
+	return data;
 }
 
 int main()
 {
-	cout << "=== Matrix Operation Tests ===\n";
-	TestMatrixAddition();
-	TestMatrixMultiplication();
-	TestMatrixTranspose();
+	vector<pair<Matrix, int>> data = LoadData("Thyroid/ann-train.data");
+	cout << "Loaded " << data.size() << " samples\n";
 
-	cout << "\n=== Layer Forward/Backward Tests ===\n";
-	TestLinearLayerForward();
-	TestActivationFunctions();
+	vector<DenseLayer> layers;
+	layers.push_back(DenseLayer(21, 64, Activation("RELU")));
+	layers.push_back(DenseLayer(64, 64, Activation("RELU")));
+	layers.push_back(DenseLayer(64, 2, Activation("SIGMOID")));
+	 
+	Loss loss("MSE");
+	double learningRate(0.1);
+	int epochs = 100;
+
+	for (int epoch = 0; epoch < epochs; epoch++)
+	{
+		double totalLoss = 0;
+		for (auto& sample : data)
+		{
+			Matrix layerInput = sample.first;
+			for (auto& layer : layers)
+			{
+				layerInput = layer.Forward(layerInput);
+			}
+
+			Matrix target(2, 1);
+			if (sample.second == 2)
+			{
+				target[0][0] = 1.0;
+				target[1][0] = 0.0;
+			}
+			else
+			{
+				target[0][0] = 0.0;
+				target[1][0] = 1.0;
+			}
+
+			totalLoss += loss.Forward(layerInput, target);
+
+			Matrix grad = loss.Backward(layerInput, target);
+			for (int j = layers.size() - 1; j >= 0; j--)
+			{
+				grad = layers[j].Backward(grad, learningRate);
+			}
+		}
+
+		if ((epoch + 1) % 1 == 0)
+		{
+			cout << "Epoch " << epoch + 1 << " - Loss: " << totalLoss / data.size() << endl;
+		}
+	}
+
+	cout << "Training Complete!" << endl;
+
+	//Testing the model
+	auto testData = LoadData("Thyroid/ann-test.data");
+	cout << "Loaded " << testData.size() << " Test Samples\n";
+
+	int correct = 0; 
+	int tp2 = 0, fp2 = 0, fn2 = 0;
+
+	for (auto& sample : testData)
+	{
+		Matrix layerInput = sample.first;
+		for (auto& layer : layers)
+		{
+			layerInput = layer.Forward(layerInput);
+		}
+
+		int predicted = layerInput[0][0] > layerInput[1][0] ? 2 : 3;
+		int actual = sample.second;
+
+		if (predicted == actual)
+		{
+			correct++;
+		}
+
+		if (actual == 2)
+		{
+			if (predicted == 2) tp2++;
+			else fn2++;
+		}
+		else
+		{
+			if (predicted == 2) fp2++;
+		}
+	}
+
+	double accuracy = (double)correct / testData.size();
+	double precision2 = tp2 + fp2 > 0 ? (double)tp2 / (tp2 + fp2) : 0;
+	double recall2 = tp2 + fn2 > 0 ? (double)tp2 / (tp2 + fn2) : 0;
+	double f1 = precision2 + recall2 > 0 ? 2 * (precision2 * recall2) / (precision2 + recall2) : 0;
 	
-	cout << "\n=== Gradient Checking ===\n";
-	NumericalGradientCheck();
+	cout << "Test Accuracy: " << accuracy * 100 << "%\n";
+	cout << "Class 2 - Precision: " << precision2 * 100 << "%, Recall: " << recall2 * 100 << "%, F1 Score: " << f1 * 100 << "%\n";
+	cout << "Class 2 - Recall: " << recall2 * 100 << "%\n";
+	cout << "f1 Score: " << f1 * 100 << "%\n";
 
-	TestSimpleNetwork();
+	cout << "Testing Complete!";
 
 	return 0;
 }

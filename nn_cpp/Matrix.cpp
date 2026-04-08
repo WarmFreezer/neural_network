@@ -316,6 +316,15 @@ namespace matrix
 		return *this;
 	}
 
+	const vector<double>& Matrix::operator[] (int index) const
+	{
+		if (index < 0 || index >= this->matrix.size()) {
+			throw std::out_of_range("Index out of bounds");
+		}
+
+		return this->matrix[index];
+	}
+
 	vector<double>& Matrix::operator[] (int index)
 	{
 		if (index < 0 || index >= this->matrix.size()) {

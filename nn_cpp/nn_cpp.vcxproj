@@ -135,6 +135,12 @@
     <ClInclude Include="Matrix.h" />
     <ClInclude Include="nn.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="Thyroid\ann-Readme" />
+    <None Include="Thyroid\ann-test.data" />
+    <None Include="Thyroid\ann-thyroid.names" />
+    <None Include="Thyroid\ann-train.data" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

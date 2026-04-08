@@ -227,8 +227,8 @@ public:
 	{
 		weights = Matrix(outFeatures, inFeatures);
 		bias = Matrix(outFeatures, 1);
-		Matrix::PopulateRand(weights);
-		Matrix::PopulateRand(bias);
+		Matrix::PopulateXavier(weights, inFeatures, outFeatures);
+		Matrix::PopulateXavier(bias, outFeatures, 1);
 		this->activation = activation;
 	}
 
@@ -246,10 +246,178 @@ public:
 		Matrix weightGrad = activationGrad * Matrix::Transpose(lastInput);
 		Matrix biasGrad = activationGrad;
 		
+		Matrix outputGrad = Matrix::Transpose(weights) * activationGrad;
+
 		weights = weights - (learningRate * weightGrad);
 		bias = bias - (learningRate * biasGrad);
 		
-		return Matrix::Transpose(weights) * activationGrad;
+		return outputGrad;
+	}
+};
+
+enum class LossType { MSE, BINARY_CROSS_ENTROPY, CATEGORICAL_CROSS_ENTROPY };
+
+class Loss
+{
+public: 
+	LossType type;
+	double lastLoss;
+
+	Loss() : type(LossType::MSE), lastLoss(0) {}
+
+	Loss(std::string type)
+	{
+		if (type == "MSE")
+		{
+			this->type = LossType::MSE;
+		}
+		else if (type == "BINARY_CROSS_ENTROPY")
+		{
+			this->type = LossType::BINARY_CROSS_ENTROPY;
+		}
+		else if (type == "CATEGORICAL_CROSS_ENTROPY")
+		{
+			this->type = LossType::CATEGORICAL_CROSS_ENTROPY;
+		}
+		else
+		{
+			this->type = LossType::MSE;
+		}
+	}
+
+	double Forward(const Matrix& predictions, const Matrix& target)
+	{
+		switch (type)
+		{
+			case LossType::MSE:
+				return MSE(predictions, target);
+			case LossType::CATEGORICAL_CROSS_ENTROPY:
+				return CategoricalCrossEntropy(predictions, target);
+			case LossType::BINARY_CROSS_ENTROPY:
+				return BinaryCrossEntropy(predictions, target);
+			default:
+				return MSE(predictions, target);
+		}
+	}
+
+	Matrix Backward(const Matrix& predictions, const Matrix& target)
+	{
+		switch (type)
+		{
+			case LossType::MSE:
+				return MSE_Gradient(predictions, target);
+			case LossType::CATEGORICAL_CROSS_ENTROPY:
+				return CategoricalCrossEntropy_Gradient(predictions, target);
+			case LossType::BINARY_CROSS_ENTROPY:
+				return BinaryCrossEntropy_Gradient(predictions, target);
+			default:
+				return MSE_Gradient(predictions, target);
+		}
+	}
+
+private:
+	double MSE(const Matrix& predictions, const Matrix& target)
+	{
+		vector<int> dimensions = predictions.Dimensions();
+		double sum = 0.0;
+		for (int row = 0; row < dimensions[0]; row++)
+		{
+			for (int col = 0; col < dimensions[1]; col++)
+			{
+				double diff = predictions[row][col] - target[row][col];
+				sum += diff * diff;
+			}
+		}
+		lastLoss = sum / (dimensions[0] * dimensions[1]);
+		return lastLoss;
+	}
+
+	Matrix MSE_Gradient(const Matrix& predictions, const Matrix& target)
+	{
+		vector<int> dimensions = predictions.Dimensions();
+		Matrix grad(dimensions[0], dimensions[1]);
+		for (int row = 0; row < dimensions[0]; row++)
+		{
+			for (int col = 0; col < dimensions[1]; col++)
+			{
+				grad[row][col] = 2.0 * (predictions[row][col] - target[row][col]) / (dimensions[0] * dimensions[1]);
+			}
+		}
+		return grad;
+	}
+
+	double BinaryCrossEntropy(const Matrix& predictions, const Matrix& target)
+	{
+		vector<int> dimensions = predictions.Dimensions();
+		double sum = 0.0;
+		const double epsilon = 1e-15; // To prevent log(0)
+		for (int row = 0; row < dimensions[0]; row++)
+		{
+			for (int col = 0; col < dimensions[1]; col++)
+			{
+				double pred = predictions[row][col];
+				pred = std::max(std::min(pred, 1.0 - epsilon), epsilon);
+				double targ = target[row][col];
+				sum += -targ * log(pred) - (1 - targ) * log(1 - pred);
+			}
+		}
+		lastLoss = sum / (dimensions[0] * dimensions[1]);
+		return lastLoss;
+	}
+
+	Matrix BinaryCrossEntropy_Gradient(const Matrix& predictions, const Matrix& target)
+	{
+		vector<int> dimensions = predictions.Dimensions();
+		Matrix grad(dimensions[0], dimensions[1]);
+		const double epsilon = 1e-15; // To prevent division by zero
+		for (int row = 0; row < dimensions[0]; row++)
+		{
+			for (int col = 0; col < dimensions[1]; col++)
+			{
+				double pred = predictions[row][col];
+				pred = std::max(std::min(pred, 1.0 - epsilon), epsilon);
+				double targ = target[row][col];
+				grad[row][col] = (pred - targ) / (dimensions[0] * dimensions[1]);
+			}
+		}
+		return grad;
+	}
+
+	double CategoricalCrossEntropy(const Matrix& predictions, const Matrix& target)
+	{
+		vector<int> dimensions = predictions.Dimensions();
+		double sum = 0.0;
+		const double epsilon = 1e-15; // To prevent log(0)
+		for (int row = 0; row < dimensions[0]; row++)
+		{
+			for (int col = 0; col < dimensions[1]; col++)
+			{
+				double pred = predictions[row][col];
+				pred = std::max(std::min(pred, 1.0 - epsilon), epsilon);
+				double targ = target[row][col];
+				sum += -targ * log(pred);
+			}
+		}
+		lastLoss = sum / (dimensions[0] * dimensions[1]);
+		return lastLoss;
+	}
+
+	Matrix CategoricalCrossEntropy_Gradient(const Matrix& predictions, const Matrix& target)
+	{
+		vector<int> dimensions = predictions.Dimensions();
+		Matrix grad(dimensions[0], dimensions[1]);
+		const double epsilon = 1e-15; // To prevent division by zero
+		for (int row = 0; row < dimensions[0]; row++)
+		{
+			for (int col = 0; col < dimensions[1]; col++)
+			{
+				double pred = predictions[row][col];
+				pred = std::max(std::min(pred, 1.0 - epsilon), epsilon);
+				double targ = target[row][col];
+				grad[row][col] = -targ / pred / (dimensions[0] * dimensions[1]);
+			}
+		}
+		return grad;
 	}
 };
 
@@ -258,5 +426,5 @@ class NeuralNetwork
 public:
 	NeuralNetwork()
 	{
-	}
+	} 
 };
