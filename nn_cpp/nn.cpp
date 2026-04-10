@@ -2,12 +2,13 @@
 #include <iostream>
 #include <vector>
 #include <omp.h>
+#include <map>
 
 #include "Matrix.h"
 
 #define Matrix matrix::Matrix
 
-enum class ActivationType { RELU, SIGMOID, TANH, None };
+enum class ActivationType { RELU, SIGMOID, TANH, SOFTMAX, None };
 
 class LinearLayer
 {
@@ -67,6 +68,10 @@ public:
 		{
 			this->type = ActivationType::TANH;
 		}
+		else if (type == "SOFTMAX")
+		{
+			this->type = ActivationType::SOFTMAX;
+		}
 		else
 		{
 			this->type = ActivationType::None;
@@ -87,6 +92,9 @@ public:
 		case ActivationType::TANH:
 			lastOutput = TanH(input);
 			break;
+		case ActivationType::SOFTMAX:
+			lastOutput = Softmax(input);
+			break;
 		default:
 			lastOutput = input;
 			break;
@@ -104,6 +112,9 @@ public:
 			return SigmoidBackward(grad);
 		case ActivationType::TANH:
 			return TanH_Backward(grad);
+		case ActivationType::SOFTMAX:
+			// Softmax gradient is typically combined with cross-entropy loss, so we can just return the grad here
+			return grad;
 		default:
 			return grad;
 		}
@@ -213,6 +224,39 @@ private:
 
 		return out;
 	}
+
+	Matrix Softmax(const Matrix& x)
+	{
+		vector<int> dimensions = x.Dimensions();
+		Matrix out(dimensions[0], dimensions[1]);
+		vector<vector<double>> matrix = x.GetMatrix();
+		for (int col = 0; col < dimensions[1]; col++)
+		{
+			double maxVal = matrix[0][col];
+			for (int row = 1; row < dimensions[0]; row++)
+			{
+				if (matrix[row][col] > maxVal)
+				{
+					maxVal = matrix[row][col];
+				}
+			}
+			double sumExp = 0.0;
+			for (int row = 0; row < dimensions[0]; row++)
+			{
+				sumExp += exp(matrix[row][col] - maxVal);
+			}
+			for (int row = 0; row < dimensions[0]; row++)
+			{
+				out[row][col] = exp(matrix[row][col] - maxVal) / sumExp;
+			}
+		}
+		return out;
+	}
+
+	Matrix Softmax_Backward(const Matrix& grad)
+	{
+		return grad;
+	}
 };
 
 class DenseLayer
@@ -261,9 +305,12 @@ class Loss
 {
 public: 
 	LossType type;
-	double lastLoss;
+	double lastLoss = 0;
 
-	Loss() : type(LossType::MSE), lastLoss(0) {}
+	std::map<int, double> classWeights;
+	bool useClassWeights = false;
+
+	Loss() : type(LossType::MSE), lastLoss(0), useClassWeights(false) {}
 
 	Loss(std::string type)
 	{
@@ -283,39 +330,95 @@ public:
 		{
 			this->type = LossType::MSE;
 		}
+
+		useClassWeights = false;
 	}
 
-	double Forward(const Matrix& predictions, const Matrix& target)
+	Loss(std::string type, std::map<int, double> weights)
 	{
+		if (type == "MSE")
+		{
+			this->type = LossType::MSE;
+		}
+		else if (type == "BINARY_CROSS_ENTROPY")
+		{
+			this->type = LossType::BINARY_CROSS_ENTROPY;
+		}
+		else if (type == "CATEGORICAL_CROSS_ENTROPY")
+		{
+			this->type = LossType::CATEGORICAL_CROSS_ENTROPY;
+		}
+		else
+		{
+			this->type = LossType::MSE;
+		}
+
+		useClassWeights = true;
+		classWeights = weights;
+	}
+
+	double Forward(const Matrix& predictions, const Matrix& target, int classLabel = -1)
+	{
+		double loss;
+
 		switch (type)
 		{
 			case LossType::MSE:
-				return MSE(predictions, target);
+				loss = MSE(predictions, target);
+				break;
 			case LossType::CATEGORICAL_CROSS_ENTROPY:
-				return CategoricalCrossEntropy(predictions, target);
+				loss = CategoricalCrossEntropy(predictions, target);
+				break;
 			case LossType::BINARY_CROSS_ENTROPY:
-				return BinaryCrossEntropy(predictions, target);
+				loss = BinaryCrossEntropy(predictions, target);
+				break;
 			default:
-				return MSE(predictions, target);
+				loss = MSE(predictions, target);
+				break;
 		}
+
+		if (useClassWeights && classLabel >= 0 && classWeights.count(classLabel))
+		{
+			loss *= classWeights[classLabel];
+		}
+
+		return loss;
 	}
 
-	Matrix Backward(const Matrix& predictions, const Matrix& target)
+	Matrix Backward(const Matrix& predictions, const Matrix& target, int classLabel = -1)
 	{
+		Matrix grad(1, 1);
 		switch (type)
 		{
 			case LossType::MSE:
-				return MSE_Gradient(predictions, target);
+				grad = MSE_Gradient(predictions, target);
+				break;
 			case LossType::CATEGORICAL_CROSS_ENTROPY:
-				return CategoricalCrossEntropy_Gradient(predictions, target);
+				grad = CategoricalCrossEntropy_Gradient(predictions, target);
+				break;
 			case LossType::BINARY_CROSS_ENTROPY:
-				return BinaryCrossEntropy_Gradient(predictions, target);
+				grad = BinaryCrossEntropy_Gradient(predictions, target);
+				break;
 			default:
-				return MSE_Gradient(predictions, target);
+				grad = MSE_Gradient(predictions, target);
+				break;
 		}
+
+		if (useClassWeights && classLabel >= 0 && classWeights.count(classLabel))
+		{
+			double weight = classWeights[classLabel];
+			for (int row = 0; row < grad.Dimensions()[0]; row++)
+			{
+				grad[row][0] *= weight;
+			}
+		}
+
+		return grad;
 	}
 
 private:
+	const double EPSILON = 1e-7;
+
 	double MSE(const Matrix& predictions, const Matrix& target)
 	{
 		vector<int> dimensions = predictions.Dimensions();
@@ -350,13 +453,13 @@ private:
 	{
 		vector<int> dimensions = predictions.Dimensions();
 		double sum = 0.0;
-		const double epsilon = 1e-15; // To prevent log(0)
+
 		for (int row = 0; row < dimensions[0]; row++)
 		{
 			for (int col = 0; col < dimensions[1]; col++)
 			{
 				double pred = predictions[row][col];
-				pred = std::max(std::min(pred, 1.0 - epsilon), epsilon);
+				pred = std::max(std::min(pred, 1.0 - EPSILON), EPSILON);
 				double targ = target[row][col];
 				sum += -targ * log(pred) - (1 - targ) * log(1 - pred);
 			}
@@ -369,13 +472,13 @@ private:
 	{
 		vector<int> dimensions = predictions.Dimensions();
 		Matrix grad(dimensions[0], dimensions[1]);
-		const double epsilon = 1e-15; // To prevent division by zero
+
 		for (int row = 0; row < dimensions[0]; row++)
 		{
 			for (int col = 0; col < dimensions[1]; col++)
 			{
 				double pred = predictions[row][col];
-				pred = std::max(std::min(pred, 1.0 - epsilon), epsilon);
+				pred = std::max(std::min(pred, 1.0 - EPSILON), EPSILON);
 				double targ = target[row][col];
 				grad[row][col] = (pred - targ) / (dimensions[0] * dimensions[1]);
 			}
@@ -387,13 +490,12 @@ private:
 	{
 		vector<int> dimensions = predictions.Dimensions();
 		double sum = 0.0;
-		const double epsilon = 1e-15; // To prevent log(0)
 		for (int row = 0; row < dimensions[0]; row++)
 		{
 			for (int col = 0; col < dimensions[1]; col++)
 			{
 				double pred = predictions[row][col];
-				pred = std::max(std::min(pred, 1.0 - epsilon), epsilon);
+				pred = std::max(std::min(pred, 1.0 - EPSILON), EPSILON);
 				double targ = target[row][col];
 				sum += -targ * log(pred);
 			}
@@ -406,15 +508,12 @@ private:
 	{
 		vector<int> dimensions = predictions.Dimensions();
 		Matrix grad(dimensions[0], dimensions[1]);
-		const double epsilon = 1e-15; // To prevent division by zero
+
 		for (int row = 0; row < dimensions[0]; row++)
 		{
 			for (int col = 0; col < dimensions[1]; col++)
 			{
-				double pred = predictions[row][col];
-				pred = std::max(std::min(pred, 1.0 - epsilon), epsilon);
-				double targ = target[row][col];
-				grad[row][col] = -targ / pred / (dimensions[0] * dimensions[1]);
+				grad[row][col] = (predictions[row][col] - target[row][col]) / (dimensions[0] * dimensions[1]);
 			}
 		}
 		return grad;
