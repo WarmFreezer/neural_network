@@ -44,6 +44,7 @@
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
+    <OpenMPOffloading>true</OpenMPOffloading>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -51,6 +52,7 @@
     <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
+    <OpenMPOffloading>true</OpenMPOffloading>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -105,6 +107,8 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <OpenMP>GenerateParallelCode</OpenMP>
+      <OpenMPOffloading>GenerateSPIR64Fat</OpenMPOffloading>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -121,6 +125,8 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <OpenMPSupport>true</OpenMPSupport>
+      <OpenMP>GenerateParallelCode</OpenMP>
+      <OpenMPOffloading>GenerateSPIR64Fat</OpenMPOffloading>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -136,10 +142,9 @@
     <ClInclude Include="nn.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Thyroid\ann-Readme" />
-    <None Include="Thyroid\ann-test.data" />
-    <None Include="Thyroid\ann-thyroid.names" />
-    <None Include="Thyroid\ann-train.data" />
+    <None Include="poker+hand\poker-hand-testing.data" />
+    <None Include="poker+hand\poker-hand-training-true.data" />
+    <None Include="poker+hand\poker-hand.names" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

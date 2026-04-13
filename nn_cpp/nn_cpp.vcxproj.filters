@@ -31,9 +31,8 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="Thyroid\ann-Readme" />
-    <None Include="Thyroid\ann-test.data" />
-    <None Include="Thyroid\ann-thyroid.names" />
-    <None Include="Thyroid\ann-train.data" />
+    <None Include="poker+hand\poker-hand.names" />
+    <None Include="poker+hand\poker-hand-training-true.data" />
+    <None Include="poker+hand\poker-hand-testing.data" />
   </ItemGroup>
 </Project>

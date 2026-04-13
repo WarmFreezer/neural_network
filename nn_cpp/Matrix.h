@@ -18,7 +18,7 @@ namespace matrix
 		Matrix(int x, int y);
 		Matrix(int x, int y, Matrix* parents[2], Op op);
 
-		static void PrintMatrix(const Matrix a);
+		static void PrintMatrix(const Matrix& a);
 		static void PopulateRand(Matrix& a);
 		static void PopulateXavier(Matrix& a, int fanIn, int fanOut);
 		static void SetNumThreads(int numThreads);
@@ -31,8 +31,8 @@ namespace matrix
 		friend Matrix operator-(double val, const Matrix& matrix);
 		Matrix operator*(const Matrix& other);
 		Matrix operator*(double other);
-		friend Matrix operator*(double val, Matrix other);
-		Matrix operator%(Matrix other);
+		friend Matrix operator*(double val, const Matrix& other);
+		Matrix operator%(const Matrix& other);
 		Matrix operator=(Matrix other);
 		const vector<double>& operator[] (int index) const;
 		vector<double>& operator[] (int index);

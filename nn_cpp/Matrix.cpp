@@ -1,5 +1,6 @@
 #include "Matrix.h"
 
+#include <algorithm>
 #include <iostream>
 #include <vector>
 #include <random>
@@ -43,14 +44,14 @@ namespace matrix
 		operation = op;
 	}
 
-	void Matrix::PrintMatrix(const Matrix a)
+	void Matrix::PrintMatrix(const Matrix& a)
 	{
 		//Prints each value in the matrix
-		for (vector<double> i : a.matrix)
+		for (int row = 0; row < a.Dimensions()[0]; row++)
 		{
-			for (double j : i)
+			for (int col = 0; col < a.Dimensions()[1]; col++)
 			{
-				cout << j << " ";
+				cout << a[row][col] << " ";
 			}
 			cout << endl;
 		}
@@ -213,16 +214,75 @@ namespace matrix
 
 	Matrix operator-(double val, const Matrix& matrix)
 	{
-		Matrix diff = Matrix(matrix.GetMatrix().size(), matrix.GetMatrix()[0].size());
-		for (int row = 0; row < matrix.GetMatrix().size(); row++)
+		Matrix diff = Matrix(matrix.Dimensions()[0], matrix.Dimensions()[1]);
+		for (int row = 0; row < matrix.Dimensions()[0]; row++)
 		{
-			for (int col = 0; col < matrix.GetMatrix()[0].size(); col++)
+			for (int col = 0; col < matrix.Dimensions()[1]; col++)
 			{
-				diff[row][col] = val - matrix.GetMatrix()[row][col];
+				diff[row][col] = val - matrix[row][col];
 			}
 		}
 		return diff;
 	}
+
+/*---------- GPU Utilization for matrix multiplication ----------*/
+/*
+	Matrix Matrix::operator*(const Matrix& other)
+	{
+		if (this->matrix[0].size() == other.matrix.size())
+		{
+			int n = this->matrix.size();
+			int k = this->matrix[0].size();
+			int m = other.matrix[0].size();
+
+			vector<double> a = Flatten(this->matrix);
+			vector<double> b = Flatten(other.matrix);
+			double* aData = a.data();
+			double* bData = b.data();
+			
+			float* aDataFloat = new float[n * k];
+			float* bDataFloat = new float[k * m];
+			float* productDataFloat = new float[n * m];
+
+			std::copy_n(aData, n * k, aDataFloat);
+			std::copy_n(bData, k * m, bDataFloat);
+
+#pragma omp target teams distribute parallel for \
+	map(to: aDataFloat[0:n*k], bDataFloat[0:k*m]) \
+	map(from: productDataFloat[0:n*m]) \
+	firstprivate(n, k, m)
+			for (int row = 0; row < n; row++)
+			{
+				for (int col = 0; col < m; col++)
+				{
+					//Calculate the value based on matrix multiplication rules
+					float indexVal = 0;
+					for (int ki = 0; ki < k; ki++)
+					{
+						indexVal += aDataFloat[row * k + ki] * bDataFloat[ki * m + col];
+					}
+
+					//Set the value after the for loop to potentially reduce false sharing
+					productDataFloat[row * m + col] = indexVal;
+				}
+			}
+
+			vector<double> product(productDataFloat, productDataFloat + n * m);
+			delete[] productDataFloat;
+
+			Matrix* parents[2] = { this, const_cast<Matrix*>(&other) };
+			Matrix productMatrix(n, m, parents, Op::MUL);
+			productMatrix.matrix = Gridify(product, n, m);
+
+			return productMatrix;
+		}
+		else
+		{
+			cout << "Cannot multiply different sized matrices.\n";
+			throw std::errc::invalid_argument;
+		}
+	}
+*/
 
 	Matrix Matrix::operator*(const Matrix& other)
 	{
@@ -232,7 +292,7 @@ namespace matrix
 			int k = this->matrix[0].size();
 			int m = other.matrix[0].size();
 
-			Matrix* parents[2] = { this, const_cast<Matrix*>(&other)};
+			Matrix* parents[2] = { this, const_cast<Matrix*>(&other) };
 
 			Matrix productMatrix(n, m, parents, Op::MUL);
 
@@ -275,27 +335,27 @@ namespace matrix
 		return productMatrix;
 	}
 
-	Matrix operator*(double val, Matrix other)
+	Matrix operator*(double val, const Matrix& other)
 	{
-		Matrix productMatrix = Matrix(other.matrix.size(), other.matrix[0].size());
-		for (int row = 0; row < other.matrix.size(); row++)
+		Matrix productMatrix = Matrix(other.Dimensions()[0], other.Dimensions()[1]);
+		for (int row = 0; row < other.Dimensions()[0]; row++)
 		{
-			for (int col = 0; col < other.matrix[0].size(); col++)
+			for (int col = 0; col < other.Dimensions()[1]; col++)
 			{
-				productMatrix[row][col] = other.matrix[row][col] * val;
+				productMatrix[row][col] = other[row][col] * val;
 			}
 		}
 		return productMatrix;
 	}
 
-	Matrix Matrix::operator%(Matrix other)
+	Matrix Matrix::operator%(const Matrix& other)
 	{
-		if (this->matrix.size() == other.matrix.size() && this->matrix[0].size() == other.matrix[0].size())
+		if (this->Dimensions()[0] == other.Dimensions()[0] && this->Dimensions()[1] == other.Dimensions()[1])
 		{
-			Matrix productMatrix(this->matrix.size(), this->matrix[0].size());
-			for (int row = 0; row < this->matrix.size(); row++)
+			Matrix productMatrix(this->Dimensions()[0], this->Dimensions()[1]);
+			for (int row = 0; row < this->Dimensions()[0]; row++)
 			{
-				for (int col = 0; col < this->matrix[0].size(); col++)
+				for (int col = 0; col < this->Dimensions()[1]; col++)
 				{
 					productMatrix[row][col] = this->matrix[row][col] * other.matrix[row][col];
 				}
@@ -318,7 +378,7 @@ namespace matrix
 
 	const vector<double>& Matrix::operator[] (int index) const
 	{
-		if (index < 0 || index >= this->matrix.size()) {
+		if (index < 0 || index >= this->Dimensions()[0]) {
 			throw std::out_of_range("Index out of bounds");
 		}
 
@@ -327,7 +387,7 @@ namespace matrix
 
 	vector<double>& Matrix::operator[] (int index)
 	{
-		if (index < 0 || index >= this->matrix.size()) {
+		if (index < 0 || index >= this->Dimensions()[0]) {
 			throw std::out_of_range("Index out of bounds");
 		}
 
@@ -370,12 +430,12 @@ namespace matrix
 				}
 				if (parents[1] != nullptr)
 				{
-					Matrix negUpstreamGrad(upstreamGrad.matrix.size(), upstreamGrad.matrix[0].size());
-					for (int row = 0; row < upstreamGrad.matrix.size(); row++)
+					Matrix negUpstreamGrad(upstreamGrad.Dimensions()[0], upstreamGrad.Dimensions()[1]);
+					for (int row = 0; row < upstreamGrad.Dimensions()[0]; row++)
 					{
-						for (int col = 0; col < upstreamGrad.matrix[0].size(); col++)
+						for (int col = 0; col < upstreamGrad.Dimensions()[1]; col++)
 						{
-							negUpstreamGrad[row][col] = -upstreamGrad.matrix[row][col];
+							negUpstreamGrad[row][col] = -upstreamGrad[row][col];
 						}
 					}
 					parents[1]->Backward(negUpstreamGrad);

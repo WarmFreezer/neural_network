@@ -126,13 +126,11 @@ private:
 		vector<int> dimensions = x.Dimensions();
 		Matrix out(dimensions[0], dimensions[1]);
 
-		vector<vector<double>> matrix = x.GetMatrix();
-
 		for (int row = 0; row < dimensions[0]; row++)
 		{
 			for (int col = 0; col < dimensions[1]; col++)
 			{
-				out[row][col] = std::max(0.0, matrix[row][col]);
+				out[row][col] = std::max(0.0, x[row][col]);
 			}
 		}
 
@@ -143,13 +141,12 @@ private:
 	{
 		vector<int> dimensions = grad.Dimensions();
 		Matrix out(dimensions[0], dimensions[1]);
-		vector<vector<double>> gradMatrix = grad.GetMatrix();
-		vector<vector<double>> inputMatrix = lastInput.GetMatrix();
+
 		for (int row = 0; row < dimensions[0]; row++)
 		{
 			for (int col = 0; col < dimensions[1]; col++)
 			{
-				out[row][col] = inputMatrix[row][col] > 0 ? gradMatrix[row][col] : 0;
+				out[row][col] = lastInput[row][col] > 0 ? grad[row][col] : 0;
 			}
 		}
 		return out;
@@ -160,13 +157,11 @@ private:
 		vector<int> dimensions = x.Dimensions();
 		Matrix out(dimensions[0], dimensions[1]);
 
-		vector<vector<double>> matrix = x.GetMatrix();
-
 		for (int row = 0; row < dimensions[0]; row++)
 		{
 			for (int col = 0; col < dimensions[1]; col++)
 			{
-				out[row][col] = 1.0 / (1.0 + exp(-matrix[row][col]));
+				out[row][col] = 1.0 / (1.0 + exp(-x[row][col]));
 			}
 		}
 
@@ -177,13 +172,12 @@ private:
 	{
 		vector<int> dimensions = grad.Dimensions();
 		Matrix out(dimensions[0], dimensions[1]);
-		vector<vector<double>> gradMatrix = grad.GetMatrix();
-		vector<vector<double>> outputMatrix = lastOutput.GetMatrix();
+
 		for (int row = 0; row < dimensions[0]; row++)
 		{
 			for (int col = 0; col < dimensions[1]; col++)
 			{
-				out[row][col] = gradMatrix[row][col] * outputMatrix[row][col] * (1 - outputMatrix[row][col]);
+				out[row][col] = grad[row][col] * lastOutput[row][col] * (1 - lastOutput[row][col]);
 			}
 		}
 
@@ -195,13 +189,11 @@ private:
 		vector<int> dimensions = x.Dimensions();
 		Matrix out(dimensions[0], dimensions[1]);
 
-		vector<vector<double>> matrix = x.GetMatrix();
-
 		for (int row = 0; row < dimensions[0]; row++)
 		{
 			for (int col = 0; col < dimensions[1]; col++)
 			{
-				out[row][col] = tanh(matrix[row][col]);
+				out[row][col] = tanh(x[row][col]);
 			}
 		}
 
@@ -212,13 +204,12 @@ private:
 	{
 		vector<int> dimensions = grad.Dimensions();
 		Matrix out(dimensions[0], dimensions[1]);
-		vector<vector<double>> gradMatrix = grad.GetMatrix();
-		vector<vector<double>> outputMatrix = lastOutput.GetMatrix();
+
 		for (int row = 0; row < dimensions[0]; row++)
 		{
 			for (int col = 0; col < dimensions[1]; col++)
 			{
-				out[row][col] = gradMatrix[row][col] * (1 - outputMatrix[row][col] * outputMatrix[row][col]);
+				out[row][col] = grad[row][col] * (1 - lastOutput[row][col] * lastOutput[row][col]);
 			}
 		}
 
@@ -229,25 +220,25 @@ private:
 	{
 		vector<int> dimensions = x.Dimensions();
 		Matrix out(dimensions[0], dimensions[1]);
-		vector<vector<double>> matrix = x.GetMatrix();
+
 		for (int col = 0; col < dimensions[1]; col++)
 		{
-			double maxVal = matrix[0][col];
+			double maxVal = x[0][col];
 			for (int row = 1; row < dimensions[0]; row++)
 			{
-				if (matrix[row][col] > maxVal)
+				if (x[row][col] > maxVal)
 				{
-					maxVal = matrix[row][col];
+					maxVal = x[row][col];
 				}
 			}
 			double sumExp = 0.0;
 			for (int row = 0; row < dimensions[0]; row++)
 			{
-				sumExp += exp(matrix[row][col] - maxVal);
+				sumExp += exp(x[row][col] - maxVal);
 			}
 			for (int row = 0; row < dimensions[0]; row++)
 			{
-				out[row][col] = exp(matrix[row][col] - maxVal) / sumExp;
+				out[row][col] = exp(x[row][col] - maxVal) / sumExp;
 			}
 		}
 		return out;
@@ -267,13 +258,28 @@ public:
 	Matrix lastInput;
 	Activation activation;
 
+	Matrix weightGradSum;
+	Matrix biasGradSum;
+	int batchCount = 0;
+
 	DenseLayer(int inFeatures, int outFeatures, Activation activation)
 	{
 		weights = Matrix(outFeatures, inFeatures);
 		bias = Matrix(outFeatures, 1);
 		Matrix::PopulateXavier(weights, inFeatures, outFeatures);
 		Matrix::PopulateXavier(bias, outFeatures, 1);
+
+		weightGradSum = Matrix(outFeatures, inFeatures);
+		biasGradSum = Matrix(outFeatures, 1);
+
 		this->activation = activation;
+	}
+
+	void BeginBatch()
+	{
+		weightGradSum = Matrix(weightGradSum.Dimensions()[0], weightGradSum.Dimensions()[1]);
+		biasGradSum = Matrix(biasGradSum.Dimensions()[0], biasGradSum.Dimensions()[1]);
+		batchCount = 0;
 	}
 
 	Matrix Forward(const Matrix& input)
@@ -291,11 +297,21 @@ public:
 		Matrix biasGrad = activationGrad;
 		
 		Matrix outputGrad = Matrix::Transpose(weights) * activationGrad;
-
-		weights = weights - (learningRate * weightGrad);
-		bias = bias - (learningRate * biasGrad);
+		
+		weightGradSum = weightGradSum + weightGrad;
+		biasGradSum = biasGradSum + biasGrad;
+		batchCount++;
 		
 		return outputGrad;
+	}
+
+	void ApplyGradients(double learningRate)
+	{
+		if (batchCount == 0) return;
+
+		double scale = learningRate / batchCount;
+		weights = weights - (scale * weightGradSum);
+		bias = bias - (scale * biasGradSum);
 	}
 };
 
