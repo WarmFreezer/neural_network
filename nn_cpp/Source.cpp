@@ -13,70 +13,62 @@
 using namespace std;
 using namespace matrix;
 
-static vector<pair<Matrix, int>> LoadData(string filename)
+static vector<vector<double>> LoadDataCSV(const string& filename, int numFeatures, int maxEntries = (int)1e7, bool hasHeaders = 0, char delim = ',')
 {
-	vector <pair<Matrix, int>> data;
-
 	ifstream file(filename);
 	string line;
+	vector<vector<double>> result;
+
+	if (hasHeaders)
+	{
+		getline(file, line);  // Skip header line
+	}
+
+	// Build category maps for non-numerical columns
+	map<int, map<string, int>> categoryMaps;
 
 	while (getline(file, line))
 	{
 		if (line.empty()) continue;
-
 		istringstream iss(line);
-		vector<double> values;
-		double val;
-
-		while (iss >> val)
+		vector<string> tokens;
+		string token;
+		while (getline(iss, token, delim))
 		{
-			values.push_back(val);
+			if (!token.empty() && token != "\r")
+				tokens.push_back(token);
 		}
 
-		if (values.size() == 22)
+		if ((int)tokens.size() != numFeatures) continue;
+
+		vector<double> row;
+		for (int col = 0; col < numFeatures; col++)
 		{
-			Matrix input(21, 1);
-			for (int i = 0; i < 21; i++)
-			{
-				input[i][0] = values[i];
+			try {
+				row.push_back(stod(tokens[col]));
 			}
-
-			data.push_back({ input, (int)values[21] });
+			catch (...) {
+				// Nominal: assign an integer index on first sight
+				auto& catMap = categoryMaps[col];
+				if (catMap.find(tokens[col]) == catMap.end())
+					catMap[tokens[col]] = (int)catMap.size();
+				row.push_back(catMap[tokens[col]]);
+			}
 		}
+		result.push_back(row);
+		if ((int)result.size() >= maxEntries) break;
 	}
-
-	file.close();
-	return data;
+	return result;
 }
 
-static vector<pair<Matrix, int>> LoadDataNormalized(string filename, int numFeatures, int maxEntries = 1e7)
+static pair<vector<pair<Matrix, int>>, vector<pair<Matrix, int>>> NormalizeData(
+	const vector<vector<double>>& rawTrainValues,
+	const vector<vector<double>>& rawTestValues,
+	int numFeatures)
 {
-	vector<pair<Matrix, int>> data;
-	ifstream file(filename);
-	string line;
-
-	// First pass: load raw data
-	vector<vector<double>> rawValues;
-	int entryCount = 0;
-	while (getline(file, line))
-	{
-		if (line.empty()) continue;
-		istringstream iss(line);
-		vector<double> values;
-		string token;
-		while (getline(iss, token, ','))
-		{
-			values.push_back(stod(token));
-		}
-		if (values.size() == numFeatures) rawValues.push_back(values);
-
-		if (++entryCount >= maxEntries) break;
-	}
-	file.close();
-
-	// Second pass: compute min/max for normalization
+	// Compute min/max from TRAIN only � never touch test stats
 	vector<double> minVals(numFeatures - 1, 1e9), maxVals(numFeatures - 1, -1e9);
-	for (auto& vals : rawValues)
+	for (auto& vals : rawTrainValues)
 	{
 		for (int i = 0; i < numFeatures - 1; i++)
 		{
@@ -85,24 +77,59 @@ static vector<pair<Matrix, int>> LoadDataNormalized(string filename, int numFeat
 		}
 	}
 
-	// Third pass: normalize and create matrices
-	for (auto& vals : rawValues)
-	{
-		Matrix input(numFeatures - 1, 1);
-		for (int i = 0; i < numFeatures - 1; i++)
+	auto normalize = [&](const vector<vector<double>>& raw) {
+		vector<pair<Matrix, int>> data;
+		for (auto& vals : raw)
 		{
-			// Normalize to [0, 1]
-			double normalized = (vals[i] - minVals[i]) / (maxVals[i] - minVals[i] + 1e-8);
-			input[i][0] = normalized;
+			Matrix input(numFeatures - 1, 1);
+			for (int i = 0; i < numFeatures - 1; i++)
+			{
+				input[i][0] = (vals[i] - minVals[i]) / (maxVals[i] - minVals[i] + 1e-8);
+			}
+			data.push_back({ input, (int)vals[numFeatures - 1] });
 		}
-		data.push_back({ input, (int)vals[numFeatures - 1] });
-	}
+		return data;
+		};
 
-	return data;
+	return { normalize(rawTrainValues), normalize(rawTestValues) };
 }
 
-static void TestModel(vector<DenseLayer>& layers, const vector<pair<Matrix, int>>& testData, int classes)
+static vector<pair<Matrix, int>> StratifiedSample(const vector<pair<Matrix, int>>& data, int samplesPerClass, int numClasses, bool zeroBased = 0)
 {
+	map<int, vector<pair<Matrix, int>>> byClass;
+	for (auto& sample : data)
+		byClass[sample.second].push_back(sample);
+
+	vector<pair<Matrix, int>> result;
+
+	int startClass = !zeroBased;
+	int endClass = startClass + numClasses;
+
+	for (int c = startClass; c < endClass; c++)
+	{
+		if (byClass.find(c) == byClass.end()) {
+			cout << "Warning: class " << c << " has no samples!\n";
+			continue;
+		}
+		auto& classData = byClass[c];
+		shuffle(classData.begin(), classData.end(), mt19937(random_device()()));
+		int take = min(samplesPerClass, (int)classData.size());
+		if (take < samplesPerClass)
+			cout << "Warning: class " << c << " only has " << take << " samples\n";
+
+		for (int i = 0; i < take; i++)
+			result.push_back(classData[i]);
+	}
+	// Shuffle so classes aren't in blocks
+	shuffle(result.begin(), result.end(), mt19937(random_device()()));
+	return result;
+}
+
+static void TestModel(vector<DenseLayer>& layers, const vector<pair<Matrix, int>>& testData, int classes, int zeroBased = 0)
+{
+	int startClass = !zeroBased;
+	int endClass = startClass + classes;
+
 	int correct = 0;
 	map<int, int> classTP, classFP, classFN;
 	Matrix confusionMatrix(classes, classes);
@@ -133,9 +160,13 @@ static void TestModel(vector<DenseLayer>& layers, const vector<pair<Matrix, int>
 				predicted = i;
 			}
 		}
-		predicted += 1;  // Convert to 1-indexed
-
 		int actual = sample.second;
+
+		if (!zeroBased)
+		{
+			// predicted is already 0-based (argmax index), only actual needs converting
+			actual--;
+		}
 
 		confusionMatrix[actual][predicted] += 1;
 
@@ -144,7 +175,7 @@ static void TestModel(vector<DenseLayer>& layers, const vector<pair<Matrix, int>
 			correct++;
 		}
 
-		// Track TP/FP/FN for each class
+		// Track TP/FP/FN for each class (both actual and predicted are now 0-based)
 		for (int c = 0; c < classes; c++)
 		{
 			if (actual == c && predicted == c) classTP[c]++;
@@ -167,7 +198,7 @@ static void TestModel(vector<DenseLayer>& layers, const vector<pair<Matrix, int>
 		double recall = (tp + fn > 0) ? (double)tp / (tp + fn) : 0;
 		double f1 = (precision + recall > 0) ? 2 * (precision * recall) / (precision + recall) : 0;
 
-		cout << "Class " << c << ":\n";
+		cout << "Class " << (c + startClass) << ":\n";
 		cout << "  Precision: " << precision * 100 << "%\n";
 		cout << "  Recall: " << recall * 100 << "%\n";
 		cout << "  F1 Score: " << f1 * 100 << "%\n\n";
@@ -181,37 +212,41 @@ static void TestModel(vector<DenseLayer>& layers, const vector<pair<Matrix, int>
 
 int main()
 {
-
-	const int numClasses = 10;
-	const int numFeatures = 11;
-	const int epochs = 100;
+	const int numClasses = 3;
+	const int numFeatures = 22;
+	const int epochs = 200;
 	const int batchSize = 32;
-	const double learningRate = 0.01;
-	const int patience = 4;
+	const int patience = 5;
 	const int maxEntries = 5000;
+	const bool zeroBasedClasses = false;
+	const bool hasHeaders = false;
+	const char delim = ' ';
+	const string trainFile = "thyroid+disease/ann-train.data";
+	const string testFile = "thyroid+disease/ann-test.data";
 
 	// Set number of threads for matrix operations (tuning this can improve performance)
 	Matrix::SetNumThreads(12);
 
-	vector<pair<Matrix, int>> data = LoadDataNormalized("poker+hand/poker-hand-training-true.data", numFeatures, maxEntries);
-	cout << "Loaded " << data.size() << " samples\n";
+	vector<vector<double>> data = LoadDataCSV(trainFile, numFeatures, maxEntries, hasHeaders, delim);
+	vector<vector<double>> testData = LoadDataCSV(testFile, numFeatures, maxEntries, hasHeaders, delim);
+	
+	auto [trainDataNorm, testDataNorm] = NormalizeData(data, testData, numFeatures);
+	
+	auto trainSample = StratifiedSample(trainDataNorm, 500, numClasses, zeroBasedClasses);
+	auto testSample = StratifiedSample(testDataNorm, 500, numClasses, zeroBasedClasses);
+
+	cout << "Loaded " << trainSample.size() << " samples\n";
 
 	// Class Distribution
 	map<int, int> classCounts;
-	for (auto& sample : data)
+	for (auto& sample : trainSample)
 	{
 		classCounts[sample.second]++;
 	}
 
-	cout << "Class Distribution\n";
-	for (auto& entry : classCounts)
-	{
-		cout << "Class " << entry.first << ": " << entry.second << " samples (" << (100.0 * entry.second) / data.size() << "%\n";
-	}
-
 	// Calculate class weights for imbalanced data
 	map<int, double> classWeights;
-	double totalSamples = data.size();
+	double totalSamples = trainSample.size();
 	for (auto& entry : classCounts)
 	{
 		classWeights[entry.first] = totalSamples / (numClasses * entry.second);
@@ -223,12 +258,12 @@ int main()
 	}
 
 	// Training the model
-	int numBatches = (data.size() + batchSize - 1) / batchSize;
+	int numBatches = (trainSample.size() + batchSize - 1) / batchSize;
 
 	vector<DenseLayer> layers;
 	layers.push_back(DenseLayer(numFeatures - 1, 64, Activation("RELU")));
 	layers.push_back(DenseLayer(64, 64, Activation("RELU")));
-	layers.push_back(DenseLayer(64, 10, Activation("SOFTMAX")));
+	layers.push_back(DenseLayer(64, numClasses, Activation("SOFTMAX")));
 
 	Loss loss((string)"CATEGORICAL_CROSS_ENTROPY", classWeights);
 	int epochsWithoutImprovement = 0;
@@ -236,14 +271,14 @@ int main()
 
 	for (int epoch = 0; epoch < epochs; epoch++)
 	{
-		std::shuffle(data.begin(), data.end(), std::mt19937(std::random_device()()));
+		std::shuffle(trainSample.begin(), trainSample.end(), std::mt19937(std::random_device()()));
 
 		double totalLoss = 0;
 
 		for (int batch = 0; batch < numBatches; batch++)
 		{
 			int startIdx = batch * batchSize;
-			int endIdx = min(startIdx + batchSize, (int)data.size());
+			int endIdx = min(startIdx + batchSize, (int)trainSample.size());
 
 			for (auto& layer : layers)
 			{
@@ -254,7 +289,7 @@ int main()
 
 			for (int sampleIdx = startIdx; sampleIdx < endIdx; sampleIdx++)
 			{
-				const auto& sample = data[sampleIdx];
+				const auto& sample = trainSample[sampleIdx];
 
 				Matrix layerInput = sample.first;
 				for (auto& layer : layers)
@@ -262,14 +297,20 @@ int main()
 					layerInput = layer.Forward(layerInput);
 				}
 
-				// One-hot encode for n classes
-				Matrix target(numClasses, 1);
-				for (int row = 0; row < target.Dimensions()[0]; row++) target[row][0] = 0;
-
 				int classLabel = sample.second;
-				if (sample.second == 1) target[0][0] = 1.0;
-				else if (sample.second == 2) target[1][0] = 1.0;
-				else target[2][0] = 1.0;
+
+				Matrix target(numClasses, 1);
+				for (int row = 0; row < numClasses; row++) 
+				{
+					target[row][0] = 0.0;
+				}
+
+				if (!zeroBasedClasses)
+				{
+					classLabel--;
+				}
+
+				target[classLabel][0] = 1.0;  
 
 				batchLoss += loss.Forward(layerInput, target, classLabel);
 
@@ -277,13 +318,13 @@ int main()
 				Matrix grad = loss.Backward(layerInput, target, classLabel);
 				for (int j = layers.size() - 1; j >= 0; j--)
 				{
-					grad = layers[j].Backward(grad, learningRate);
+					grad = layers[j].Backward(grad);
 				}
 			}
 
 			for (auto& layer : layers)
 			{
-				layer.ApplyGradients(learningRate);
+				layer.ApplyGradients();
 			}
 
 			totalLoss += batchLoss;
@@ -291,10 +332,10 @@ int main()
 
 		if ((epoch + 1) % 1 == 0)
 		{
-			cout << "Epoch " << epoch + 1 << " - Loss: " << totalLoss / data.size() << "		\r";
+			cout << "Epoch " << epoch + 1 << " - Loss: " << totalLoss / trainSample.size() << "		\r";
 		}
 
-		if ((totalLoss / data.size()) < previousLoss - 0.001 > 0)
+		if ((totalLoss / trainSample.size()) < previousLoss - 0.001)
 		{
 			epochsWithoutImprovement = 0;
 		}
@@ -303,20 +344,19 @@ int main()
 			epochsWithoutImprovement++;
 			if (epochsWithoutImprovement >= patience)
 			{
-				cout << "\nEarly stopping at epoch " << epoch + 1 << " with loss " << totalLoss / data.size() << endl;
+				cout << "\nEarly stopping at epoch " << epoch + 1 << " with loss " << totalLoss / trainSample.size() << endl;
 				break;
 			}
 		}
-		previousLoss = totalLoss / data.size();
+		previousLoss = totalLoss / trainSample.size();
 	}
 	cout << endl;
 	cout << "Training Complete!" << endl;
 
 	//Testing the model
-	auto testData = LoadDataNormalized("poker+hand/poker-hand-testing.data", numFeatures, maxEntries);
-	cout << "Loaded " << testData.size() << " Test Samples\n";
+	cout << "Loaded " << testSample.size() << " Test Samples\n";
 
-	TestModel(layers, testData, numClasses);
+	TestModel(layers, testSample, numClasses);
 	
 	return 0;
 }

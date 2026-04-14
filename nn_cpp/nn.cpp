@@ -250,6 +250,62 @@ private:
 	}
 };
 
+class AdamOptimizer
+{
+public:
+	double learningRate;
+	double beta1;
+	double beta2;
+	double epsilon;
+	int timestep;
+
+	Matrix m, v;
+	bool initialized = false;
+
+	AdamOptimizer(double learningRate = 0.001, double beta1 = 0.9, double beta2 = 0.999, double epsilon = 1e-8)
+		: learningRate(learningRate), beta1(beta1), beta2(beta2), epsilon(epsilon), timestep(0) {
+	}
+
+	void Initialize(int rows, int cols)
+	{
+		m = Matrix(rows, cols);
+		v = Matrix(rows, cols);
+		initialized = true;
+	}
+
+	Matrix Update(const Matrix& grad)
+	{
+		vector<int> dims = grad.Dimensions();
+		if (!initialized)
+		{
+			Initialize(dims[0], dims[1]);
+		}
+
+		timestep++;
+		Matrix update(dims[0], dims[1]);
+
+		for (int row = 0; row < dims[0]; row++)
+		{
+			for (int col = 0; col < dims[1]; col++)
+			{
+				double g = grad[row][col];
+				m[row][col] = beta1 * m[row][col] + (1 - beta1) * g;
+				v[row][col] = beta2 * v[row][col] + (1 - beta2) * g * g;
+				double mHat = m[row][col] / (1 - pow(beta1, timestep));
+				double vHat = v[row][col] / (1 - pow(beta2, timestep));
+				update[row][col] = learningRate * mHat / (sqrt(vHat) + epsilon);
+			}
+		}
+
+		return update;
+	}
+
+	void ResetTimestep()
+	{
+		timestep = 0;
+	}
+};
+
 class DenseLayer
 {
 public:
@@ -260,14 +316,16 @@ public:
 
 	Matrix weightGradSum;
 	Matrix biasGradSum;
+	AdamOptimizer weightOptimizer;
+	AdamOptimizer biasOptimizer;
 	int batchCount = 0;
 
-	DenseLayer(int inFeatures, int outFeatures, Activation activation)
+	DenseLayer(int inFeatures, int outFeatures, Activation activation) : weightOptimizer(0.001), biasOptimizer(0.001)
 	{
 		weights = Matrix(outFeatures, inFeatures);
 		bias = Matrix(outFeatures, 1);
 		Matrix::PopulateXavier(weights, inFeatures, outFeatures);
-		Matrix::PopulateXavier(bias, outFeatures, 1);
+		// bias stays zero-initialized (default Matrix ctor zeroes values)
 
 		weightGradSum = Matrix(outFeatures, inFeatures);
 		biasGradSum = Matrix(outFeatures, 1);
@@ -289,7 +347,7 @@ public:
 		return activation.Forward(linearOutput);
 	}
 
-	Matrix Backward(const Matrix& grad, double learningRate)
+	Matrix Backward(const Matrix& grad)
 	{
 		Matrix activationGrad = activation.Backward(grad);
 		
@@ -305,13 +363,19 @@ public:
 		return outputGrad;
 	}
 
-	void ApplyGradients(double learningRate)
+	void ApplyGradients()
 	{
 		if (batchCount == 0) return;
 
-		double scale = learningRate / batchCount;
-		weights = weights - (scale * weightGradSum);
-		bias = bias - (scale * biasGradSum);
+		double scale = 1.0 / batchCount;
+		Matrix scaledWeightGrad = weightGradSum * scale;
+		Matrix scaledBiasGrad = biasGradSum * scale;
+
+		Matrix weightUpdate = weightOptimizer.Update(scaledWeightGrad);
+		Matrix biasUpdate = biasOptimizer.Update(scaledBiasGrad);
+
+		weights = weights - weightUpdate;
+		bias = bias - biasUpdate;
 	}
 };
 
