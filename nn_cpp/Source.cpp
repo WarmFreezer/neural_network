@@ -4,6 +4,8 @@
 #include <sstream>
 #include <random>
 #include <vector>
+#include <chrono>
+#include <array>
 
 #include "nn.cpp"
 #include "Matrix.h"
@@ -96,6 +98,7 @@ static pair<vector<pair<Matrix, int>>, vector<pair<Matrix, int>>> NormalizeData(
 
 static vector<pair<Matrix, int>> StratifiedSample(const vector<pair<Matrix, int>>& data, int samplesPerClass, int numClasses, bool zeroBased = 0)
 {
+	static mt19937 rng(random_device{}());
 	map<int, vector<pair<Matrix, int>>> byClass;
 	for (auto& sample : data)
 		byClass[sample.second].push_back(sample);
@@ -112,7 +115,7 @@ static vector<pair<Matrix, int>> StratifiedSample(const vector<pair<Matrix, int>
 			continue;
 		}
 		auto& classData = byClass[c];
-		shuffle(classData.begin(), classData.end(), mt19937(random_device()()));
+		shuffle(classData.begin(), classData.end(), rng);
 		int take = min(samplesPerClass, (int)classData.size());
 		if (take < samplesPerClass)
 			cout << "Warning: class " << c << " only has " << take << " samples\n";
@@ -121,11 +124,11 @@ static vector<pair<Matrix, int>> StratifiedSample(const vector<pair<Matrix, int>
 			result.push_back(classData[i]);
 	}
 	// Shuffle so classes aren't in blocks
-	shuffle(result.begin(), result.end(), mt19937(random_device()()));
+	shuffle(result.begin(), result.end(), rng);
 	return result;
 }
 
-static void TestModel(vector<DenseLayer>& layers, const vector<pair<Matrix, int>>& testData, int classes, int zeroBased = 0)
+static void TestModel(DenseLayer* layers, int numLayers, const vector<pair<Matrix, int>>& testData, int classes, int zeroBased = 0)
 {
 	int startClass = !zeroBased;
 	int endClass = startClass + classes;
@@ -144,9 +147,9 @@ static void TestModel(vector<DenseLayer>& layers, const vector<pair<Matrix, int>
 	for (auto& sample : testData)
 	{
 		Matrix layerInput = sample.first;
-		for (auto& layer : layers)
+		for (int layer = 0; layer < numLayers; layer++)
 		{
-			layerInput = layer.Forward(layerInput);
+			layerInput = layers[layer].Forward(layerInput);
 		}
 
 		// Find predicted class (argmax)
@@ -215,25 +218,26 @@ int main()
 	const int numClasses = 3;
 	const int numFeatures = 22;
 	const int epochs = 200;
-	const int batchSize = 32;
-	const int patience = 5;
+	const int batchSize = 128;
+	const int patience = 20;
+	const double negligibleImprovement = 0.0001;
 	const int maxEntries = 5000;
 	const bool zeroBasedClasses = false;
 	const bool hasHeaders = false;
 	const char delim = ' ';
 	const string trainFile = "thyroid+disease/ann-train.data";
 	const string testFile = "thyroid+disease/ann-test.data";
-
-	// Set number of threads for matrix operations (tuning this can improve performance)
-	Matrix::SetNumThreads(12);
+	const int numThreads = 1;
+	
+	omp_set_num_threads(numThreads);
 
 	vector<vector<double>> data = LoadDataCSV(trainFile, numFeatures, maxEntries, hasHeaders, delim);
 	vector<vector<double>> testData = LoadDataCSV(testFile, numFeatures, maxEntries, hasHeaders, delim);
 	
 	auto [trainDataNorm, testDataNorm] = NormalizeData(data, testData, numFeatures);
 	
-	auto trainSample = StratifiedSample(trainDataNorm, 500, numClasses, zeroBasedClasses);
-	auto testSample = StratifiedSample(testDataNorm, 500, numClasses, zeroBasedClasses);
+	auto trainSample = StratifiedSample(trainDataNorm, 1500, numClasses, zeroBasedClasses);
+	auto testSample = StratifiedSample(testDataNorm, 1500, numClasses, zeroBasedClasses);
 
 	cout << "Loaded " << trainSample.size() << " samples\n";
 
@@ -260,103 +264,116 @@ int main()
 	// Training the model
 	int numBatches = (trainSample.size() + batchSize - 1) / batchSize;
 
-	vector<DenseLayer> layers;
-	layers.push_back(DenseLayer(numFeatures - 1, 64, Activation("RELU")));
-	layers.push_back(DenseLayer(64, 64, Activation("RELU")));
-	layers.push_back(DenseLayer(64, numClasses, Activation("SOFTMAX")));
+	DenseLayer layers[] = {
+		DenseLayer(numFeatures - 1, 64, Activation("RELU")),
+		DenseLayer(64, 64, Activation("RELU")),
+		DenseLayer(64, numClasses, Activation("SOFTMAX"))
+	};
 
 	Loss loss((string)"CATEGORICAL_CROSS_ENTROPY", classWeights);
 	int epochsWithoutImprovement = 0;
 	double previousLoss = 1e9;
 
-	for (int epoch = 0; epoch < epochs; epoch++)
+	static mt19937 rng(random_device{}());
+
+	for (int i = 0; i < 10; i++)
 	{
-		std::shuffle(trainSample.begin(), trainSample.end(), std::mt19937(std::random_device()()));
+		epochsWithoutImprovement = 0;
+		previousLoss = 1e9;
 
-		double totalLoss = 0;
-
-		for (int batch = 0; batch < numBatches; batch++)
+		// Start Time
+		auto start = std::chrono::high_resolution_clock::now();
+		for (int epoch = 0; epoch < epochs; epoch++)
 		{
-			int startIdx = batch * batchSize;
-			int endIdx = min(startIdx + batchSize, (int)trainSample.size());
+			shuffle(trainSample.begin(), trainSample.end(), rng);
 
-			for (auto& layer : layers)
+			double totalLoss = 0;
+
+			const int numLayers = (int)size(layers);
+			const int numThreads = omp_get_max_threads();
+
+			// Allocate thread-local layer copies once per epoch; reuse across batches.
+			// SyncWeightsFrom copies values in-place (no reallocation) each batch.
+			vector<vector<DenseLayer>> threadLayers(numThreads,
+				vector<DenseLayer>(layers, layers + numLayers));
+
+			for (int batch = 0; batch < numBatches; batch++)
 			{
-				layer.BeginBatch();
-			}
+				int startIdx = batch * batchSize;
+				int endIdx = min(startIdx + batchSize, (int)trainSample.size());
 
-			double batchLoss = 0;
+				// Sync weights from updated main layers and reset gradient accumulators.
+				for (auto& tl : threadLayers)
+					for (int j = 0; j < numLayers; j++) { tl[j].SyncWeightsFrom(layers[j]); tl[j].BeginBatch(); }
 
-			for (int sampleIdx = startIdx; sampleIdx < endIdx; sampleIdx++)
-			{
-				const auto& sample = trainSample[sampleIdx];
+				double batchLoss = 0;
 
-				Matrix layerInput = sample.first;
-				for (auto& layer : layers)
+#pragma omp parallel for reduction(+:batchLoss) schedule(static)
+				for (int sampleIdx = startIdx; sampleIdx < endIdx; sampleIdx++)
 				{
-					layerInput = layer.Forward(layerInput);
+					int tid = omp_get_thread_num();
+					auto& localLayers = threadLayers[tid];
+					const auto& sample = trainSample[sampleIdx];
+
+					// Forward pass on thread-local layer copies
+					Matrix currentInput = sample.first;
+					for (int li = 0; li < numLayers; li++)
+						currentInput = localLayers[li].Forward(currentInput);
+
+					int originalLabel = sample.second;
+					int classIdx = zeroBasedClasses ? originalLabel : originalLabel - 1;
+
+					Matrix target(numClasses, 1);
+					target[classIdx][0] = 1.0;
+
+					batchLoss += loss.Forward(currentInput, target, originalLabel);
+
+					// Backward pass on thread-local layer copies
+					Matrix grad = loss.Backward(currentInput, target, originalLabel);
+					for (int j = numLayers - 1; j >= 0; j--)
+						grad = localLayers[j].Backward(grad);
 				}
 
-				int classLabel = sample.second;
+				// Merge per-thread gradient accumulators into main layers, then update
+				for (auto& layer : layers) layer.BeginBatch();
+				for (auto& tl : threadLayers)
+					for (int j = 0; j < numLayers; j++)
+						layers[j].AccumulateFrom(tl[j]);
 
-				Matrix target(numClasses, 1);
-				for (int row = 0; row < numClasses; row++) 
-				{
-					target[row][0] = 0.0;
-				}
+				for (auto& layer : layers) layer.ApplyGradients();
 
-				if (!zeroBasedClasses)
-				{
-					classLabel--;
-				}
-
-				target[classLabel][0] = 1.0;  
-
-				batchLoss += loss.Forward(layerInput, target, classLabel);
-
-				// Backpropagation
-				Matrix grad = loss.Backward(layerInput, target, classLabel);
-				for (int j = layers.size() - 1; j >= 0; j--)
-				{
-					grad = layers[j].Backward(grad);
-				}
+				totalLoss += batchLoss;
 			}
 
-			for (auto& layer : layers)
+			double epochLoss = totalLoss / trainSample.size();
+			//cout << "Epoch " << epoch + 1 << " - Loss: " << epochLoss << "		\r";
+
+			if (epochLoss < previousLoss - negligibleImprovement)
 			{
-				layer.ApplyGradients();
+				epochsWithoutImprovement = 0;
 			}
-
-			totalLoss += batchLoss;
-		}
-
-		if ((epoch + 1) % 1 == 0)
-		{
-			cout << "Epoch " << epoch + 1 << " - Loss: " << totalLoss / trainSample.size() << "		\r";
-		}
-
-		if ((totalLoss / trainSample.size()) < previousLoss - 0.001)
-		{
-			epochsWithoutImprovement = 0;
-		}
-		else
-		{
-			epochsWithoutImprovement++;
-			if (epochsWithoutImprovement >= patience)
+			else
 			{
-				cout << "\nEarly stopping at epoch " << epoch + 1 << " with loss " << totalLoss / trainSample.size() << endl;
-				break;
+				epochsWithoutImprovement++;
+				if (epochsWithoutImprovement >= patience)
+				{
+					//cout << "Early stopping at epoch " << epoch + 1 << " with loss " << epochLoss << endl;
+					break;
+				}
 			}
+			previousLoss = epochLoss;
 		}
-		previousLoss = totalLoss / trainSample.size();
+		auto end = std::chrono::high_resolution_clock::now();
+		// End Time
+
+		cout << "\n" << (end - start).count() / 1000000000.00;
 	}
-	cout << endl;
-	cout << "Training Complete!" << endl;
+
 
 	//Testing the model
 	cout << "Loaded " << testSample.size() << " Test Samples\n";
 
-	TestModel(layers, testSample, numClasses);
+	TestModel(layers, size(layers), testSample, numClasses);
 	
 	return 0;
 }

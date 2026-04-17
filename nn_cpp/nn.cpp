@@ -377,6 +377,28 @@ public:
 		weights = weights - weightUpdate;
 		bias = bias - biasUpdate;
 	}
+
+	// Merge gradient accumulators from a thread-local layer copy into this layer.
+	// Call this after a parallel sample loop before ApplyGradients.
+	void AccumulateFrom(const DenseLayer& other)
+	{
+		weightGradSum = weightGradSum + other.weightGradSum;
+		biasGradSum = biasGradSum + other.biasGradSum;
+		batchCount += other.batchCount;
+	}
+
+	// Copy weight and bias values in-place from source (no reallocation).
+	// Use this each batch to keep thread-local copies in sync without
+	// paying the cost of reconstructing Matrix objects.
+	void SyncWeightsFrom(const DenseLayer& source)
+	{
+		std::copy(source.weights.GetMatrix(),
+			source.weights.GetMatrix() + weights.Rows() * weights.Cols(),
+			weights.GetMatrix());
+		std::copy(source.bias.GetMatrix(),
+			source.bias.GetMatrix() + bias.Rows() * bias.Cols(),
+			bias.GetMatrix());
+	}
 };
 
 enum class LossType { MSE, BINARY_CROSS_ENTROPY, CATEGORICAL_CROSS_ENTROPY };

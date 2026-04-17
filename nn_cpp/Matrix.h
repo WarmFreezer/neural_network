@@ -9,19 +9,18 @@
 
 namespace matrix
 {
-	enum class Op { ADD, SUB, MUL, NONE };
-
 	class Matrix
 	{
 	public:
+		~Matrix();
 		Matrix();
 		Matrix(int x, int y);
-		Matrix(int x, int y, Matrix* parents[2], Op op);
+		Matrix(const Matrix& other);
+		Matrix(Matrix&& other) noexcept;
 
 		static void PrintMatrix(const Matrix& a);
 		static void PopulateRand(Matrix& a);
 		static void PopulateXavier(Matrix& a, int fanIn, int fanOut);
-		static void SetNumThreads(int numThreads);
 
 		Matrix operator+(const Matrix& other);
 		Matrix operator+(double val) const;
@@ -33,18 +32,19 @@ namespace matrix
 		Matrix operator*(double other);
 		friend Matrix operator*(double val, const Matrix& other);
 		Matrix operator%(const Matrix& other);
-		Matrix operator=(Matrix other);
-		const vector<double>& operator[] (int index) const;
-		vector<double>& operator[] (int index);
+		Matrix& operator=(const double* other);
+		Matrix& operator=(const Matrix& other);
+		Matrix& operator=(Matrix&& other) noexcept;
+		const double* operator[] (int index) const;
+		double* operator[] (int index);
 
+		int Rows() const;
+		int Cols() const;
 		vector<int> Dimensions() const;
-		void Backward(const Matrix& upstreamGrad);
-		vector<vector<double>> GetGrad() const;
-		vector<vector<double>> GetMatrix() const;
-		void ZeroGrad();
+		double* GetMatrix() const;
 
 		template <typename T>
-		static vector<T> Flatten(const vector<vector<T>> v);
+		static vector<T> ToArray(const Matrix v);
 
 		template <typename T>
 		static vector<vector<T>> Gridify(const vector<T> v, int n, int k);
@@ -52,9 +52,7 @@ namespace matrix
 		static Matrix Transpose(const Matrix& matrix);
 
 	private:
-		vector<vector<double>> matrix;
-		vector<vector<double>> grad;
-		Matrix* parents[2];
-		Op operation = Op::NONE;
+		int dimensions[2];
+		double* matrix;
 	};
 }
