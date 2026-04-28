@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <algorithm>
 #include <iostream>
+#include <cassert>
 #include <vector>
 #include <random>
 #include <string>
@@ -116,7 +117,6 @@ namespace matrix
 
 	Matrix Matrix::operator+(const Matrix& other)
 	{
-		Matrix* parents[2] = { this, const_cast<Matrix*>(&other) };
 		if (this->dimensions[0] == other.dimensions[0] && this->dimensions[1] == other.dimensions[1])
 		{
 			Matrix sum(this->dimensions[0], this->dimensions[1]);
@@ -179,7 +179,6 @@ namespace matrix
 
 	Matrix Matrix::operator-(const Matrix& other)
 	{
-		Matrix* parents[2] = { this, const_cast<Matrix*>(&other)};
 		if (this->dimensions[0] == other.dimensions[0] && this->dimensions[1] == other.dimensions[1])
 		{
 			Matrix diff(this->dimensions[0], this->dimensions[1]);
@@ -242,17 +241,16 @@ namespace matrix
 
 	Matrix Matrix::operator*(const Matrix& other)
 	{
+		//omp_set_num_threads(12);
 		if (this->dimensions[1] == other.dimensions[0])
 		{
 			int n = this->dimensions[0];
 			int k = this->dimensions[1];
 			int m = other.dimensions[1];
 
-			Matrix* parents[2] = { this, const_cast<Matrix*>(&other) };
-
 			Matrix productMatrix(n, m);
 
-//#pragma omp parallel for 
+#pragma omp parallel for 
 			for (int row = 0; row < n; row++)
 			{
 				for (int col = 0; col < m; col++)
@@ -279,79 +277,127 @@ namespace matrix
 		}
 	}
 
-	//Matrix Matrix::operator*(const Matrix& other) const
-	//{
-	//	int n = this->dimensions[0];
-	//	int k = this->dimensions[1];
-	//	int m = other.dimensions[1];
+	/*//Initialize queue
+	static sycl::queue q = sycl::queue();
 
-	//	double* a = this->matrix;
-	//	double* b = other.matrix;
-	//	double* result = new double[n * m];
+	Matrix Matrix::operator*(const Matrix& bMatrix) // SYCL USM
+	{
+		int n = this->dimensions[0];
+		int k = this->dimensions[1];
+		int m = bMatrix.dimensions[1];
 
-	//	//Initialize queue
-	//	sycl::queue q = sycl::queue();
+		double* a = this->matrix;
+		double* b = bMatrix.matrix;
+		double* result = new double[n * m];
 
-	//	//Scope of q operations
-	//	{
-	//		//Unified Shared Memory allocation 
-	//		double* dev_ptr_a = sycl::malloc_device<double>(n * k, q);
-	//		double* dev_ptr_b = sycl::malloc_device<double>(k * m, q);
-	//		double* dev_ptr_r = sycl::malloc_device<double>(n * m, q);
+		//Scope of q operations
+		{
+			//Unified Shared Memory allocation 
+			double* dev_ptr_a = sycl::malloc_device<double>(n * k, q);
+			double* dev_ptr_b = sycl::malloc_device<double>(k * m, q);
+			double* dev_ptr_r = sycl::malloc_device<double>(n * m, q);
 
-	//		//Copy thr values in each vector to USM
-	//		q.memcpy(dev_ptr_a, a, n * k * sizeof(double)).wait();
-	//		q.memcpy(dev_ptr_b, b, k * m * sizeof(double)).wait();
+			//Copy thr values in each std::vector to USM
+			auto e1 = q.memcpy(dev_ptr_a, a, n * k * sizeof(double));
+			auto e2 = q.memcpy(dev_ptr_b, b, k * m * sizeof(double));
 
-	//		q.submit
-	//		(
-	//			[&](sycl::handler& cgh)
-	//			{
-	//				cgh.parallel_for
-	//				(
-	//					//On a 2-d range from 0 -> n-1 and 0 -> m-1
-	//					/*
-	//						for (int i = 0; i < n; i++)
-	//							for (int j = 0; j < m; j++)
-	//								body;
-	//					*/
-	//					sycl::range<1>(static_cast<size_t>(m)), [=](sycl::id<1> idx)
-	//					{
-	//						//Since most of the memory accesses utilize column, split the threads column-wise 
-	//						int col = idx[0];
+			e1.wait();
+			e2.wait();
 
-	//						for (int row = 0; row < n; row++)
-	//						{
-	//							double sum = 0;
+			q.submit
+			(
+				[&](sycl::handler& cgh)
+				{
+					cgh.parallel_for
+					(
+						//On a 2-d range from 0 -> n-1 and 0 -> m-1
+						//
+						//	for (int i = 0; i < n; i++)
+						//		for (int j = 0; j < m; j++)
+						//			body;
+						//
+						sycl::range<2>(static_cast<size_t>(m), static_cast<size_t>(n)), [=](sycl::id<2> idx)
+						{
+							//Since most of the memory accesses utilize column, split the threads column-wise 
+							int col = idx[0];
+							int row = idx[1];
 
-	//							//Regular matrix multiplication inner loop
-	//							for (int ki = 0; ki < k; ki++)
-	//							{
-	//								sum += dev_ptr_a[row * k + ki] * dev_ptr_b[ki * m + col];
-	//							}
+							double sum = 0;
 
-	//							dev_ptr_r[row * m + col] = sum;
-	//						}
-	//					}
-	//				);
-	//			}
-	//		);
+							//Regular matrix multiplication inner loop
+							for (int ki = 0; ki < k; ki++)
+							{
+								sum += dev_ptr_a[row * k + ki] * dev_ptr_b[ki * m + col];
+							}
 
-	//		q.wait();
+							dev_ptr_r[row * m + col] = sum;
+							
+						}
+					);
+				}
+			);
 
-	//		q.memcpy(result, dev_ptr_r, static_cast<size_t>(n * m) * sizeof(double)).wait();
+			q.wait();
 
-	//		sycl::free(dev_ptr_a, q);
-	//		sycl::free(dev_ptr_b, q);
-	//		sycl::free(dev_ptr_r, q);
-	//	}
+			q.memcpy(result, dev_ptr_r, static_cast<size_t>(n * m) * sizeof(double)).wait();
 
-	//	Matrix result_grid = Matrix(n, m);
-	//	result_grid = result;
+			sycl::free(dev_ptr_a, q);
+			sycl::free(dev_ptr_b, q);
+			sycl::free(dev_ptr_r, q);
+		}
 
-	//	delete[] result;
-	//	return result_grid;
-	//}
+		Matrix result_grid = Matrix(n, m);
+		result_grid.matrix = result;
+
+		return result_grid;
+	}*/
+
+	/*Matrix Matrix::operator*(const Matrix& other) // SYCL Buffers
+	{
+		int n = this->dimensions[0];
+		int k = this->dimensions[1];
+		int m = other.dimensions[1];
+
+		double* a = this->matrix;
+		double* b = other.matrix;
+		double* result = new double[n * m];
+
+		sycl::buffer<double, 1> a_buf(a, sycl::range<1>(n * k));
+		sycl::buffer<double, 1> b_buf(b, sycl::range<1>(k * m));
+		sycl::buffer<double, 1> result_buf(result, sycl::range<1>(n * m));
+
+		//Initialize queue
+		sycl::queue q = sycl::queue();
+		q.submit(
+			[&](sycl::handler& cgh)
+			{
+				auto a_acc = a_buf.get_access<sycl::access::mode::read>(cgh);
+				auto b_acc = b_buf.get_access<sycl::access::mode::read>(cgh);
+				auto r_acc = result_buf.get_access<sycl::access::mode::write>(cgh);
+				cgh.parallel_for
+				(
+					sycl::range<1>(static_cast<size_t>(m)), [=](sycl::id<1> idx)
+					{
+						int col = idx[0];
+						for (int row = 0; row < n; row++)
+						{
+							double sum = 0;
+							for (int ki = 0; ki < k; ki++)
+							{
+								sum += a_acc[row * k + ki] * b_acc[ki * m + col];
+							}
+							r_acc[row * m + col] = sum;
+						}
+					}
+				);
+			}
+		);
+
+		Matrix result_grid = Matrix(n, m);
+		result_grid = result;
+
+		return result_grid;
+	}*/
 
 	Matrix Matrix::operator*(double other)
 	{
@@ -457,19 +503,13 @@ namespace matrix
 
 	const double* Matrix::operator[] (int index) const
 	{
-		if (index < 0 || index >= this->dimensions[0]) {
-			throw std::out_of_range("Index out of bounds");
-		}
-
+		assert(index >= 0 && index < dimensions[0]);
 		return this->matrix + (index * this->dimensions[1]);
 	}
 
 	double* Matrix::operator[] (int index)
 	{
-		if (index < 0 || index >= this->dimensions[0]) {
-			throw std::out_of_range("Index out of bounds");
-		}
-
+		assert(index >= 0 && index < dimensions[0]);
 		return this->matrix + (index * this->dimensions[1]);
 	}
 
@@ -488,15 +528,15 @@ namespace matrix
 		return this->dimensions[1];
 	}
 
-	vector<int> Matrix::Dimensions() const
+	std::pair<int, int> Matrix::Dimensions() const
 	{
-		return vector<int>{ this->dimensions[0], this->dimensions[1] };
+		return std::pair<int, int>{ this->dimensions[0], this->dimensions[1] };
 	}
 
 	template <typename T>
-	vector<T> Matrix::ToArray(const Matrix v)
+	std::vector<T> Matrix::ToArray(const Matrix v)
 	{
-		vector<T> flat;
+		std::vector<T> flat;
 		for (int row = 0; row < v.dimensions[0]; row++)
 		{
 			for (int col = 0; col < v.dimensions[1]; col++)
@@ -509,9 +549,9 @@ namespace matrix
 	}
 
 	template <typename T>
-	vector<vector<T>> Matrix::Gridify(const vector<T> v, int n, int k)
+	std::vector<std::vector<T>> Matrix::Gridify(const std::vector<T> v, int n, int k)
 	{
-		vector<vector<T>> result(n, vector<T>(k));
+		std::vector<std::vector<T>> result(n, std::vector<T>(k));
 
 		for (int row = 0; row < n; row++)
 		{

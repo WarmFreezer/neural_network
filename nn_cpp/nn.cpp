@@ -123,12 +123,12 @@ public:
 private:
 	Matrix ReLU(const Matrix& x)
 	{
-		vector<int> dimensions = x.Dimensions();
-		Matrix out(dimensions[0], dimensions[1]);
+		std::pair<int, int> dimensions = x.Dimensions();
+		Matrix out(dimensions.first, dimensions.second);
 
-		for (int row = 0; row < dimensions[0]; row++)
+		for (int row = 0; row < dimensions.first; row++)
 		{
-			for (int col = 0; col < dimensions[1]; col++)
+			for (int col = 0; col < dimensions.second; col++)
 			{
 				out[row][col] = std::max(0.0, x[row][col]);
 			}
@@ -139,12 +139,12 @@ private:
 
 	Matrix ReLU_Backward(const Matrix& grad)
 	{
-		vector<int> dimensions = grad.Dimensions();
-		Matrix out(dimensions[0], dimensions[1]);
+		std::pair<int, int> dimensions = grad.Dimensions();
+		Matrix out(dimensions.first, dimensions.second);
 
-		for (int row = 0; row < dimensions[0]; row++)
+		for (int row = 0; row < dimensions.first; row++)
 		{
-			for (int col = 0; col < dimensions[1]; col++)
+			for (int col = 0; col < dimensions.second; col++)
 			{
 				out[row][col] = lastInput[row][col] > 0 ? grad[row][col] : 0;
 			}
@@ -154,12 +154,12 @@ private:
 
 	Matrix Sigmoid(const Matrix& x)
 	{
-		vector<int> dimensions = x.Dimensions();
-		Matrix out(dimensions[0], dimensions[1]);
+		std::pair<int, int> dimensions = x.Dimensions();
+		Matrix out(dimensions.first, dimensions.second);
 
-		for (int row = 0; row < dimensions[0]; row++)
+		for (int row = 0; row < dimensions.first; row++)
 		{
-			for (int col = 0; col < dimensions[1]; col++)
+			for (int col = 0; col < dimensions.second; col++)
 			{
 				out[row][col] = 1.0 / (1.0 + exp(-x[row][col]));
 			}
@@ -170,12 +170,12 @@ private:
 
 	Matrix SigmoidBackward(const Matrix& grad)
 	{
-		vector<int> dimensions = grad.Dimensions();
-		Matrix out(dimensions[0], dimensions[1]);
+		std::pair<int, int> dimensions = grad.Dimensions();
+		Matrix out(dimensions.first, dimensions.second);
 
-		for (int row = 0; row < dimensions[0]; row++)
+		for (int row = 0; row < dimensions.first; row++)
 		{
-			for (int col = 0; col < dimensions[1]; col++)
+			for (int col = 0; col < dimensions.second; col++)
 			{
 				out[row][col] = grad[row][col] * lastOutput[row][col] * (1 - lastOutput[row][col]);
 			}
@@ -186,12 +186,12 @@ private:
 
 	Matrix TanH(const Matrix& x)
 	{
-		vector<int> dimensions = x.Dimensions();
-		Matrix out(dimensions[0], dimensions[1]);
+		std::pair<int, int> dimensions = x.Dimensions();
+		Matrix out(dimensions.first, dimensions.second);
 
-		for (int row = 0; row < dimensions[0]; row++)
+		for (int row = 0; row < dimensions.first; row++)
 		{
-			for (int col = 0; col < dimensions[1]; col++)
+			for (int col = 0; col < dimensions.second; col++)
 			{
 				out[row][col] = tanh(x[row][col]);
 			}
@@ -202,12 +202,12 @@ private:
 
 	Matrix TanH_Backward(const Matrix& grad)
 	{
-		vector<int> dimensions = grad.Dimensions();
-		Matrix out(dimensions[0], dimensions[1]);
+		std::pair<int, int> dimensions = grad.Dimensions();
+		Matrix out(dimensions.first, dimensions.second);
 
-		for (int row = 0; row < dimensions[0]; row++)
+		for (int row = 0; row < dimensions.first; row++)
 		{
-			for (int col = 0; col < dimensions[1]; col++)
+			for (int col = 0; col < dimensions.second; col++)
 			{
 				out[row][col] = grad[row][col] * (1 - lastOutput[row][col] * lastOutput[row][col]);
 			}
@@ -218,13 +218,13 @@ private:
 
 	Matrix Softmax(const Matrix& x)
 	{
-		vector<int> dimensions = x.Dimensions();
-		Matrix out(dimensions[0], dimensions[1]);
+		std::pair<int, int> dimensions = x.Dimensions();
+		Matrix out(dimensions.first, dimensions.second);
 
-		for (int col = 0; col < dimensions[1]; col++)
+		for (int col = 0; col < dimensions.second; col++)
 		{
 			double maxVal = x[0][col];
-			for (int row = 1; row < dimensions[0]; row++)
+			for (int row = 1; row < dimensions.first; row++)
 			{
 				if (x[row][col] > maxVal)
 				{
@@ -232,11 +232,11 @@ private:
 				}
 			}
 			double sumExp = 0.0;
-			for (int row = 0; row < dimensions[0]; row++)
+			for (int row = 0; row < dimensions.first; row++)
 			{
 				sumExp += exp(x[row][col] - maxVal);
 			}
-			for (int row = 0; row < dimensions[0]; row++)
+			for (int row = 0; row < dimensions.first; row++)
 			{
 				out[row][col] = exp(x[row][col] - maxVal) / sumExp;
 			}
@@ -263,8 +263,7 @@ public:
 	bool initialized = false;
 
 	AdamOptimizer(double learningRate = 0.001, double beta1 = 0.9, double beta2 = 0.999, double epsilon = 1e-8)
-		: learningRate(learningRate), beta1(beta1), beta2(beta2), epsilon(epsilon), timestep(0) {
-	}
+		: learningRate(learningRate), beta1(beta1), beta2(beta2), epsilon(epsilon), timestep(0) {}
 
 	void Initialize(int rows, int cols)
 	{
@@ -275,18 +274,18 @@ public:
 
 	Matrix Update(const Matrix& grad)
 	{
-		vector<int> dims = grad.Dimensions();
+		std::pair<int, int> dims = grad.Dimensions();
 		if (!initialized)
 		{
-			Initialize(dims[0], dims[1]);
+			Initialize(dims.first, dims.second);
 		}
 
 		timestep++;
-		Matrix update(dims[0], dims[1]);
+		Matrix update(dims.first, dims.second);
 
-		for (int row = 0; row < dims[0]; row++)
+		for (int row = 0; row < dims.first; row++)
 		{
-			for (int col = 0; col < dims[1]; col++)
+			for (int col = 0; col < dims.second; col++)
 			{
 				double g = grad[row][col];
 				m[row][col] = beta1 * m[row][col] + (1 - beta1) * g;
@@ -335,8 +334,8 @@ public:
 
 	void BeginBatch()
 	{
-		weightGradSum = Matrix(weightGradSum.Dimensions()[0], weightGradSum.Dimensions()[1]);
-		biasGradSum = Matrix(biasGradSum.Dimensions()[0], biasGradSum.Dimensions()[1]);
+		std::fill(weightGradSum.GetMatrix(), weightGradSum.GetMatrix() + weightGradSum.Rows() * weightGradSum.Cols(), 0.0);
+		std::fill(biasGradSum.GetMatrix(), biasGradSum.GetMatrix() + biasGradSum.Rows() * biasGradSum.Cols(), 0.0);
 		batchCount = 0;
 	}
 
@@ -509,7 +508,7 @@ public:
 		if (useClassWeights && classLabel >= 0 && classWeights.count(classLabel))
 		{
 			double weight = classWeights[classLabel];
-			for (int row = 0; row < grad.Dimensions()[0]; row++)
+			for (int row = 0; row < grad.Dimensions().first; row++)
 			{
 				grad[row][0] *= weight;
 			}
@@ -523,29 +522,29 @@ private:
 
 	double MSE(const Matrix& predictions, const Matrix& target)
 	{
-		vector<int> dimensions = predictions.Dimensions();
+		std::pair<int, int> dimensions = predictions.Dimensions();
 		double sum = 0.0;
-		for (int row = 0; row < dimensions[0]; row++)
+		for (int row = 0; row < dimensions.first; row++)
 		{
-			for (int col = 0; col < dimensions[1]; col++)
+			for (int col = 0; col < dimensions.second; col++)
 			{
 				double diff = predictions[row][col] - target[row][col];
 				sum += diff * diff;
 			}
 		}
-		lastLoss = sum / (dimensions[0] * dimensions[1]);
+		lastLoss = sum / (dimensions.first * dimensions.second);
 		return lastLoss;
 	}
 
 	Matrix MSE_Gradient(const Matrix& predictions, const Matrix& target)
 	{
-		vector<int> dimensions = predictions.Dimensions();
-		Matrix grad(dimensions[0], dimensions[1]);
-		for (int row = 0; row < dimensions[0]; row++)
+		std::pair<int, int> dimensions = predictions.Dimensions();
+		Matrix grad(dimensions.first, dimensions.second);
+		for (int row = 0; row < dimensions.first; row++)
 		{
-			for (int col = 0; col < dimensions[1]; col++)
+			for (int col = 0; col < dimensions.second; col++)
 			{
-				grad[row][col] = 2.0 * (predictions[row][col] - target[row][col]) / (dimensions[0] * dimensions[1]);
+				grad[row][col] = 2.0 * (predictions[row][col] - target[row][col]) / (dimensions.first * dimensions.second);
 			}
 		}
 		return grad;
@@ -553,12 +552,12 @@ private:
 
 	double BinaryCrossEntropy(const Matrix& predictions, const Matrix& target)
 	{
-		vector<int> dimensions = predictions.Dimensions();
+		std::pair<int, int> dimensions = predictions.Dimensions();
 		double sum = 0.0;
 
-		for (int row = 0; row < dimensions[0]; row++)
+		for (int row = 0; row < dimensions.first; row++)
 		{
-			for (int col = 0; col < dimensions[1]; col++)
+			for (int col = 0; col < dimensions.second; col++)
 			{
 				double pred = predictions[row][col];
 				pred = std::max(std::min(pred, 1.0 - EPSILON), EPSILON);
@@ -566,23 +565,23 @@ private:
 				sum += -targ * log(pred) - (1 - targ) * log(1 - pred);
 			}
 		}
-		lastLoss = sum / (dimensions[0] * dimensions[1]);
+		lastLoss = sum / (dimensions.first * dimensions.second);
 		return lastLoss;
 	}
 
 	Matrix BinaryCrossEntropy_Gradient(const Matrix& predictions, const Matrix& target)
 	{
-		vector<int> dimensions = predictions.Dimensions();
-		Matrix grad(dimensions[0], dimensions[1]);
+		std::pair<int, int> dimensions = predictions.Dimensions();
+		Matrix grad(dimensions.first, dimensions.second);
 
-		for (int row = 0; row < dimensions[0]; row++)
+		for (int row = 0; row < dimensions.first; row++)
 		{
-			for (int col = 0; col < dimensions[1]; col++)
+			for (int col = 0; col < dimensions.second; col++)
 			{
 				double pred = predictions[row][col];
 				pred = std::max(std::min(pred, 1.0 - EPSILON), EPSILON);
 				double targ = target[row][col];
-				grad[row][col] = (pred - targ) / (dimensions[0] * dimensions[1]);
+				grad[row][col] = (pred - targ) / (dimensions.first * dimensions.second);
 			}
 		}
 		return grad;
@@ -590,11 +589,11 @@ private:
 
 	double CategoricalCrossEntropy(const Matrix& predictions, const Matrix& target)
 	{
-		vector<int> dimensions = predictions.Dimensions();
+		std::pair<int, int> dimensions = predictions.Dimensions();
 		double sum = 0.0;
-		for (int row = 0; row < dimensions[0]; row++)
+		for (int row = 0; row < dimensions.first; row++)
 		{
-			for (int col = 0; col < dimensions[1]; col++)
+			for (int col = 0; col < dimensions.second; col++)
 			{
 				double pred = predictions[row][col];
 				pred = std::max(std::min(pred, 1.0 - EPSILON), EPSILON);
@@ -602,20 +601,20 @@ private:
 				sum += -targ * log(pred);
 			}
 		}
-		lastLoss = sum / (dimensions[0] * dimensions[1]);
+		lastLoss = sum / (dimensions.first * dimensions.second);
 		return lastLoss;
 	}
 
 	Matrix CategoricalCrossEntropy_Gradient(const Matrix& predictions, const Matrix& target)
 	{
-		vector<int> dimensions = predictions.Dimensions();
-		Matrix grad(dimensions[0], dimensions[1]);
+		std::pair<int, int> dimensions = predictions.Dimensions();
+		Matrix grad(dimensions.first, dimensions.second);
 
-		for (int row = 0; row < dimensions[0]; row++)
+		for (int row = 0; row < dimensions.first; row++)
 		{
-			for (int col = 0; col < dimensions[1]; col++)
+			for (int col = 0; col < dimensions.second; col++)
 			{
-				grad[row][col] = (predictions[row][col] - target[row][col]) / (dimensions[0] * dimensions[1]);
+				grad[row][col] = (predictions[row][col] - target[row][col]) / (dimensions.first * dimensions.second);
 			}
 		}
 		return grad;

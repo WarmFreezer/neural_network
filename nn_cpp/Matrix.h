@@ -5,8 +5,6 @@
 #include <string>
 #include <omp.h>
 
-#define vector std::vector
-
 namespace matrix
 {
 	class Matrix
@@ -40,14 +38,14 @@ namespace matrix
 
 		int Rows() const;
 		int Cols() const;
-		vector<int> Dimensions() const;
+		std::pair<int, int> Dimensions() const;
 		double* GetMatrix() const;
 
 		template <typename T>
-		static vector<T> ToArray(const Matrix v);
+		static std::vector<T> ToArray(const Matrix v);
 
 		template <typename T>
-		static vector<vector<T>> Gridify(const vector<T> v, int n, int k);
+		static std::vector<std::vector<T>> Gridify(const std::vector<T> v, int n, int k);
 			
 		static Matrix Transpose(const Matrix& matrix);
 
