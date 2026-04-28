@@ -1,55 +1,82 @@
 #include "Matrix.h"
 
+#include <stdexcept>
 #include <algorithm>
 #include <iostream>
 #include <vector>
 #include <random>
 #include <string>
+
 #include <omp.h>
+
+//#include <sycl/sycl.hpp>
 
 using namespace std;
 namespace matrix
 {
+	Matrix::~Matrix()
+	{
+		if (matrix != nullptr)
+		{
+			delete[] matrix;
+		}
+	}
+
 	Matrix::Matrix()
 	{
-		matrix = vector<vector<double>>();
-		parents[0] = nullptr;
-		parents[1] = nullptr;
+		matrix = nullptr;
+		dimensions[0] = 0;
+		dimensions[1] = 0;
 	}
 
 	Matrix::Matrix(int x, int y)
 	{
 		if (x <= 0 || y <= 0)
 		{
-			cout << "Invalid matrix dimensions.\n";
-			throw std::errc::invalid_argument;
+			string x = "Invalid matrix dimensions.\n";
+			cerr << x;
+			throw std::invalid_argument(x);
 		}
 
-		matrix = vector<vector<double>>(x, vector<double>(y));
-		parents[0] = nullptr;
-		parents[1] = nullptr;
+		dimensions[0] = x;
+		dimensions[1] = y;
+		matrix = new double [x * y];
+		std::fill(matrix, matrix + (x * y), 0.0);
 	}
 
-	Matrix::Matrix(int x, int y, Matrix* parents[2], Op op)
+	Matrix::Matrix(const Matrix& other)
 	{
-		if (x <= 0 || y <= 0)
-		{
-			cout << "Invalid matrix dimensions.\n";
-			throw std::errc::invalid_argument;
-		}
+		dimensions[0] = other.dimensions[0];
+		dimensions[1] = other.dimensions[1];
 
-		matrix = vector<vector<double>>(x, vector<double>(y));
-		this->parents[0] = parents[0];
-		this->parents[1] = parents[1];
-		operation = op;
+		if (other.matrix != nullptr && dimensions[0] > 0 && dimensions[1] > 0)
+		{
+			matrix = new double[dimensions[0] * dimensions[1]];
+			copy(other.matrix, other.matrix + (dimensions[0] * dimensions[1]), matrix);
+		}
+		else
+		{
+			matrix = nullptr;
+		}
+	}
+
+	Matrix::Matrix(Matrix&& other) noexcept
+	{
+		dimensions[0] = other.dimensions[0];
+		dimensions[1] = other.dimensions[1];
+		matrix = other.matrix;
+	
+		other.dimensions[0] = 0;
+		other.dimensions[1] = 0;
+		other.matrix = nullptr;
 	}
 
 	void Matrix::PrintMatrix(const Matrix& a)
 	{
 		//Prints each value in the matrix
-		for (int row = 0; row < a.Dimensions()[0]; row++)
+		for (int row = 0; row < a.dimensions[0]; row++)
 		{
-			for (int col = 0; col < a.Dimensions()[1]; col++)
+			for (int col = 0; col < a.dimensions[1]; col++)
 			{
 				cout << a[row][col] << " ";
 			}
@@ -63,11 +90,11 @@ namespace matrix
 		uniform_real_distribution<double> dist(-10000.0, 10000.0);
 
 		//Populates the matrix's matrix with random integers from -1000 to 1000
-		for (vector<double>& i : a.matrix)
+		for (int row = 0; row < a.dimensions[0]; row++)
 		{
-			for (double& j : i)
+			for (int col = 0; col < a.dimensions[1]; col++)
 			{
-				j = dist(rng);
+				a[row][col] = dist(rng);
 			}
 		}
 	}
@@ -75,72 +102,63 @@ namespace matrix
 	void Matrix::PopulateXavier(Matrix& a, int fanIn, int fanOut)
 	{
 		mt19937 rng(std::random_device{}());
-		double limit = sqrt(6.0 / (a.matrix.size() + a.matrix[0].size()));
+		double limit = sqrt(6.0 / (a.dimensions[0] + a.dimensions[1]));
 		uniform_real_distribution<double> dist(-limit, limit);
 
-		for (vector<double>& i : a.matrix)
+		for (int row = 0; row < a.dimensions[0]; row++)
 		{
-			for (double& j : i)
+			for (int col = 0; col < a.dimensions[1]; col++)
 			{
-				j = dist(rng);
+				a[row][col] = dist(rng);
 			}
 		}
-	}
-
-	void Matrix::SetNumThreads(int numThreads)
-	{
-		//Used for evaluating the most optimal thread count for multiplication
-		omp_set_num_threads(numThreads);
 	}
 
 	Matrix Matrix::operator+(const Matrix& other)
 	{
 		Matrix* parents[2] = { this, const_cast<Matrix*>(&other) };
-		if (this->matrix.size() == other.matrix.size() && this->matrix[0].size() == other.matrix[0].size())
+		if (this->dimensions[0] == other.dimensions[0] && this->dimensions[1] == other.dimensions[1])
 		{
-			Matrix sum(this->matrix.size(), this->matrix[0].size(), parents, Op::ADD);
+			Matrix sum(this->dimensions[0], this->dimensions[1]);
 
-			for (int row = 0; row < this->matrix.size(); row++)
+			for (int row = 0; row < this->dimensions[0]; row++)
 			{
-				for (int col = 0; col < this->matrix[0].size(); col++)
+				for (int col = 0; col < this->dimensions[1]; col++)
 				{
-					sum[row][col] = this->matrix[row][col] + other.matrix[row][col];
+					sum[row][col] = (*this)[row][col] + other[row][col];
 				}
 			}
 
 			return sum;
 		}
-		else if (this->matrix.size() == 1 && this->matrix[0].size() == 1)
+		else if (this->dimensions[0] == 1 && this->dimensions[1] == 1)
 		{
-			Matrix returnMe = this->matrix[0][0] + other;
-			returnMe.parents[0] = parents[0];
-			returnMe.parents[1] = parents[1];
+			Matrix returnMe = (*this)[0][0] + other;
 
 			return returnMe;
 		}
-		else if (other.matrix.size() == 1 && other.matrix[0].size() == 1)
+		else if (other.dimensions[0] == 1 && other.dimensions[1] == 1)
 		{
-			Matrix returnMe = other.matrix[0][0] + *this;
-			returnMe.parents[0] = parents[0];
-			returnMe.parents[1] = parents[1];
+			Matrix returnMe = other[0][0] + *this;
 
 			return returnMe;
 		}
 		else
 		{
-			cout << "Cannot add different sized matrices.\n";
-			throw std::errc::invalid_argument;
+			string x = "Cannot add different sized matrices\n";
+			cerr << x;
+			throw std::invalid_argument(x);
 		}
 	}
 
 	Matrix Matrix::operator+(double val) const
 	{
-		Matrix sum = Matrix(this->matrix.size(), this->matrix[0].size());
-		for (int row = 0; row < this->matrix.size(); row++)
+		Matrix sum = Matrix(this->dimensions[0], this->dimensions[1]);
+		for (int row = 0; row < this->dimensions[0]; row++)
 		{
-			for (int col = 0; col < this->matrix[0].size(); col++)
+			for (int col = 0; col < this->dimensions[1]; col++)
 			{
-				sum[row][col] = this->matrix[row][col] + val;
+				sum[row][col] = (*this)[row][col] + val;
 			}
 		}
 		return sum;
@@ -148,12 +166,12 @@ namespace matrix
 
 	Matrix operator+(double val, const Matrix& matrix)
 	{
-		Matrix sum = Matrix(matrix.matrix.size(), matrix.matrix[0].size());
-		for (int row = 0; row < matrix.matrix.size(); row++)
+		Matrix sum = Matrix(matrix.dimensions[0], matrix.dimensions[1]);
+		for (int row = 0; row < matrix.dimensions[0]; row++)
 		{
-			for (int col = 0; col < matrix.matrix[0].size(); col++)
+			for (int col = 0; col < matrix.dimensions[1]; col++)
 			{
-				sum[row][col] = matrix.matrix[row][col] + val;
+				sum[row][col] = matrix[row][col] + val;
 			}
 		}
 		return sum;
@@ -162,141 +180,79 @@ namespace matrix
 	Matrix Matrix::operator-(const Matrix& other)
 	{
 		Matrix* parents[2] = { this, const_cast<Matrix*>(&other)};
-		if (this->matrix.size() == other.matrix.size() && this->matrix[0].size() == other.matrix[0].size())
+		if (this->dimensions[0] == other.dimensions[0] && this->dimensions[1] == other.dimensions[1])
 		{
-			Matrix diff(this->matrix.size(), this->matrix[0].size(), parents, Op::SUB);
+			Matrix diff(this->dimensions[0], this->dimensions[1]);
 
-			for (int row = 0; row < this->matrix.size(); row++)
+			for (int row = 0; row < this->dimensions[0]; row++)
 			{
-				for (int col = 0; col < this->matrix[0].size(); col++)
+				for (int col = 0; col < this->dimensions[1]; col++)
 				{
-					diff[row][col] = this->matrix[row][col] - other.matrix[row][col];
+					diff[row][col] = (*this)[row][col] - other[row][col];
 				}
 			}
 
 			return diff;
 		}
-		else if (this->matrix.size() == 1 && this->matrix[0].size() == 1)
+		else if (this->dimensions[0] == 1 && this->dimensions[1] == 1)
 		{
-			Matrix returnMe = this->matrix[0][0] - other;
-			returnMe.parents[0] = parents[0];
-			returnMe.parents[1] = parents[1];
+			Matrix returnMe = (*this)[0][0] - other;
 
 			return returnMe;
 		}
-		else if (other.matrix.size() == 1 && other.matrix[0].size() == 1)
+		else if (other.dimensions[0] == 1 && other.dimensions[1] == 1)
 		{
-			Matrix returnMe = other.matrix[0][0] - *this;
-			returnMe.parents[0] = parents[0];
-			returnMe.parents[1] = parents[1];
+			Matrix returnMe = other[0][0] - *this;
 
 			return returnMe;
 		}
 		else
 		{
-			cout << "Cannot add different sized matrices.\n";
-			throw std::errc::invalid_argument;
+			string x = "Cannot add different sized matrices\n";
+			cerr << x;
+			throw std::invalid_argument(x);
 		}
 	}
 
 	Matrix Matrix::operator-(double val) const
 	{
-		Matrix diff = Matrix(this->matrix.size(), this->matrix[0].size());
-		for (int row = 0; row < this->matrix.size(); row++)
+		Matrix diff = Matrix(this->dimensions[0], this->dimensions[1]);
+		for (int row = 0; row < this->dimensions[0]; row++)
 		{
-			for (int col = 0; col < this->matrix[0].size(); col++)
+			for (int col = 0; col < this->dimensions[1]; col++)
 			{
-				diff[row][col] = this->matrix[row][col] - val;
+				diff[row][col] = (*this)[row][col] - val;
 			}
 		}
 		return diff;
 	}
 
-	Matrix operator-(double val, const Matrix& matrix)
+	Matrix operator-(double val, const Matrix& other)
 	{
-		Matrix diff = Matrix(matrix.Dimensions()[0], matrix.Dimensions()[1]);
-		for (int row = 0; row < matrix.Dimensions()[0]; row++)
+		Matrix diff = Matrix(other.dimensions[0], other.dimensions[1]);
+		for (int row = 0; row < other.dimensions[0]; row++)
 		{
-			for (int col = 0; col < matrix.Dimensions()[1]; col++)
+			for (int col = 0; col < other.dimensions[1]; col++)
 			{
-				diff[row][col] = val - matrix[row][col];
+				diff[row][col] = val - other[row][col];
 			}
 		}
 		return diff;
 	}
 
-/*---------- GPU Utilization for matrix multiplication ----------*/
-/*
 	Matrix Matrix::operator*(const Matrix& other)
 	{
-		if (this->matrix[0].size() == other.matrix.size())
+		if (this->dimensions[1] == other.dimensions[0])
 		{
-			int n = this->matrix.size();
-			int k = this->matrix[0].size();
-			int m = other.matrix[0].size();
-
-			vector<double> a = Flatten(this->matrix);
-			vector<double> b = Flatten(other.matrix);
-			double* aData = a.data();
-			double* bData = b.data();
-			
-			float* aDataFloat = new float[n * k];
-			float* bDataFloat = new float[k * m];
-			float* productDataFloat = new float[n * m];
-
-			std::copy_n(aData, n * k, aDataFloat);
-			std::copy_n(bData, k * m, bDataFloat);
-
-#pragma omp target teams distribute parallel for \
-	map(to: aDataFloat[0:n*k], bDataFloat[0:k*m]) \
-	map(from: productDataFloat[0:n*m]) \
-	firstprivate(n, k, m)
-			for (int row = 0; row < n; row++)
-			{
-				for (int col = 0; col < m; col++)
-				{
-					//Calculate the value based on matrix multiplication rules
-					float indexVal = 0;
-					for (int ki = 0; ki < k; ki++)
-					{
-						indexVal += aDataFloat[row * k + ki] * bDataFloat[ki * m + col];
-					}
-
-					//Set the value after the for loop to potentially reduce false sharing
-					productDataFloat[row * m + col] = indexVal;
-				}
-			}
-
-			vector<double> product(productDataFloat, productDataFloat + n * m);
-			delete[] productDataFloat;
-
-			Matrix* parents[2] = { this, const_cast<Matrix*>(&other) };
-			Matrix productMatrix(n, m, parents, Op::MUL);
-			productMatrix.matrix = Gridify(product, n, m);
-
-			return productMatrix;
-		}
-		else
-		{
-			cout << "Cannot multiply different sized matrices.\n";
-			throw std::errc::invalid_argument;
-		}
-	}
-*/
-
-	Matrix Matrix::operator*(const Matrix& other)
-	{
-		if (this->matrix[0].size() == other.matrix.size())
-		{
-			int n = this->matrix.size();
-			int k = this->matrix[0].size();
-			int m = other.matrix[0].size();
+			int n = this->dimensions[0];
+			int k = this->dimensions[1];
+			int m = other.dimensions[1];
 
 			Matrix* parents[2] = { this, const_cast<Matrix*>(&other) };
 
-			Matrix productMatrix(n, m, parents, Op::MUL);
+			Matrix productMatrix(n, m);
 
-#pragma omp parallel for
+//#pragma omp parallel for 
 			for (int row = 0; row < n; row++)
 			{
 				for (int col = 0; col < m; col++)
@@ -305,7 +261,7 @@ namespace matrix
 					double indexVal = 0;
 					for (int ki = 0; ki < k; ki++)
 					{
-						indexVal += this->matrix[row][ki] * other.matrix[ki][col];
+						indexVal += (*this)[row][ki] * other[ki][col];
 					}
 
 					//Set the value after the for loop to potentially reduce false sharing
@@ -317,19 +273,94 @@ namespace matrix
 		}
 		else
 		{
-			cout << "Cannot multiply different sized matrices.\n";
-			throw std::errc::invalid_argument;
+			string x = "Cannot multiply different sized matrices.\n";
+			cerr << x;
+			throw std::invalid_argument(x);
 		}
 	}
 
+	//Matrix Matrix::operator*(const Matrix& other) const
+	//{
+	//	int n = this->dimensions[0];
+	//	int k = this->dimensions[1];
+	//	int m = other.dimensions[1];
+
+	//	double* a = this->matrix;
+	//	double* b = other.matrix;
+	//	double* result = new double[n * m];
+
+	//	//Initialize queue
+	//	sycl::queue q = sycl::queue();
+
+	//	//Scope of q operations
+	//	{
+	//		//Unified Shared Memory allocation 
+	//		double* dev_ptr_a = sycl::malloc_device<double>(n * k, q);
+	//		double* dev_ptr_b = sycl::malloc_device<double>(k * m, q);
+	//		double* dev_ptr_r = sycl::malloc_device<double>(n * m, q);
+
+	//		//Copy thr values in each vector to USM
+	//		q.memcpy(dev_ptr_a, a, n * k * sizeof(double)).wait();
+	//		q.memcpy(dev_ptr_b, b, k * m * sizeof(double)).wait();
+
+	//		q.submit
+	//		(
+	//			[&](sycl::handler& cgh)
+	//			{
+	//				cgh.parallel_for
+	//				(
+	//					//On a 2-d range from 0 -> n-1 and 0 -> m-1
+	//					/*
+	//						for (int i = 0; i < n; i++)
+	//							for (int j = 0; j < m; j++)
+	//								body;
+	//					*/
+	//					sycl::range<1>(static_cast<size_t>(m)), [=](sycl::id<1> idx)
+	//					{
+	//						//Since most of the memory accesses utilize column, split the threads column-wise 
+	//						int col = idx[0];
+
+	//						for (int row = 0; row < n; row++)
+	//						{
+	//							double sum = 0;
+
+	//							//Regular matrix multiplication inner loop
+	//							for (int ki = 0; ki < k; ki++)
+	//							{
+	//								sum += dev_ptr_a[row * k + ki] * dev_ptr_b[ki * m + col];
+	//							}
+
+	//							dev_ptr_r[row * m + col] = sum;
+	//						}
+	//					}
+	//				);
+	//			}
+	//		);
+
+	//		q.wait();
+
+	//		q.memcpy(result, dev_ptr_r, static_cast<size_t>(n * m) * sizeof(double)).wait();
+
+	//		sycl::free(dev_ptr_a, q);
+	//		sycl::free(dev_ptr_b, q);
+	//		sycl::free(dev_ptr_r, q);
+	//	}
+
+	//	Matrix result_grid = Matrix(n, m);
+	//	result_grid = result;
+
+	//	delete[] result;
+	//	return result_grid;
+	//}
+
 	Matrix Matrix::operator*(double other)
 	{
-		Matrix productMatrix = Matrix(this->matrix.size(), this->matrix[0].size());
-		for (int row = 0; row < this->matrix.size(); row++)
+		Matrix productMatrix = Matrix(this->dimensions[0], this->dimensions[1]);
+		for (int row = 0; row < this->dimensions[0]; row++)
 		{
-			for (int col = 0; col < this->matrix[0].size(); col++)
+			for (int col = 0; col < this->dimensions[1]; col++)
 			{
-				productMatrix[row][col] = this->matrix[row][col] * other;
+				productMatrix[row][col] = (*this)[row][col] * other;
 			}
 		}
 		return productMatrix;
@@ -337,10 +368,10 @@ namespace matrix
 
 	Matrix operator*(double val, const Matrix& other)
 	{
-		Matrix productMatrix = Matrix(other.Dimensions()[0], other.Dimensions()[1]);
-		for (int row = 0; row < other.Dimensions()[0]; row++)
+		Matrix productMatrix = Matrix(other.dimensions[0], other.dimensions[1]);
+		for (int row = 0; row < other.dimensions[0]; row++)
 		{
-			for (int col = 0; col < other.Dimensions()[1]; col++)
+			for (int col = 0; col < other.dimensions[1]; col++)
 			{
 				productMatrix[row][col] = other[row][col] * val;
 			}
@@ -350,150 +381,125 @@ namespace matrix
 
 	Matrix Matrix::operator%(const Matrix& other)
 	{
-		if (this->Dimensions()[0] == other.Dimensions()[0] && this->Dimensions()[1] == other.Dimensions()[1])
+		if (this->dimensions[0] == other.dimensions[0] && this->dimensions[1] == other.dimensions[1])
 		{
-			Matrix productMatrix(this->Dimensions()[0], this->Dimensions()[1]);
-			for (int row = 0; row < this->Dimensions()[0]; row++)
+			Matrix productMatrix(this->dimensions[0], this->dimensions[1]);
+			for (int row = 0; row < this->dimensions[0]; row++)
 			{
-				for (int col = 0; col < this->Dimensions()[1]; col++)
+				for (int col = 0; col < this->dimensions[1]; col++)
 				{
-					productMatrix[row][col] = this->matrix[row][col] * other.matrix[row][col];
+					productMatrix[row][col] = (*this)[row][col] * other[row][col];
 				}
 			}
 			return productMatrix;
 		}
 		else
 		{
-			throw std::errc::invalid_argument;
+			string x = "Error.\n";
+			cerr << x;
+			throw std::invalid_argument(x);
 		}
 	}
 
-	Matrix Matrix::operator=(Matrix other)
+	Matrix& Matrix::operator=(const double* other)
 	{
-		this->matrix = other.matrix;
-		this->parents[0] = other.parents[0];
-		this->parents[1] = other.parents[1];
+		if (matrix != nullptr)
+		{
+			delete[] matrix;
+		}
+		matrix = new double[dimensions[0] * dimensions[1]];
+		std::copy(other, other + dimensions[0] * dimensions[1], matrix);
 		return *this;
 	}
 
-	const vector<double>& Matrix::operator[] (int index) const
+	Matrix& Matrix::operator=(const Matrix& other)
 	{
-		if (index < 0 || index >= this->Dimensions()[0]) {
-			throw std::out_of_range("Index out of bounds");
-		}
-
-		return this->matrix[index];
-	}
-
-	vector<double>& Matrix::operator[] (int index)
-	{
-		if (index < 0 || index >= this->Dimensions()[0]) {
-			throw std::out_of_range("Index out of bounds");
-		}
-
-		return this->matrix[index];
-	}
-
-	void Matrix::Backward(const Matrix& upstreamGrad)
-	{
-		if (grad.empty())
+		if (this != &other)
 		{
-			grad = upstreamGrad.matrix;
-		}
-		else
-		{
-			for (int row = 0; row < grad.size(); row++)
+			if (matrix != nullptr)
 			{
-				for (int col = 0; col < grad[0].size(); col++)
-				{
-					grad[row][col] += upstreamGrad.matrix[row][col];
-				}
+				delete[] matrix;
+			}
+			dimensions[0] = other.dimensions[0];
+			dimensions[1] = other.dimensions[1];
+			if (other.matrix != nullptr && dimensions[0] > 0 && dimensions[1] > 0)
+			{
+				matrix = new double[dimensions[0] * dimensions[1]];
+				std::copy(other.matrix, other.matrix + dimensions[0] * dimensions[1], matrix);
+			}
+			else
+			{
+				matrix = nullptr;
 			}
 		}
-
-		switch (operation)
-		{
-			case Op::ADD:
-				if (parents[0] != nullptr)
-				{
-					parents[0]->Backward(upstreamGrad);
-				}
-				if (parents[1] != nullptr)
-				{
-					parents[1]->Backward(upstreamGrad);
-				}
-				break;
-			case Op::SUB:
-				if (parents[0] != nullptr)
-				{
-					parents[0]->Backward(upstreamGrad);
-				}
-				if (parents[1] != nullptr)
-				{
-					Matrix negUpstreamGrad(upstreamGrad.Dimensions()[0], upstreamGrad.Dimensions()[1]);
-					for (int row = 0; row < upstreamGrad.Dimensions()[0]; row++)
-					{
-						for (int col = 0; col < upstreamGrad.Dimensions()[1]; col++)
-						{
-							negUpstreamGrad[row][col] = -upstreamGrad[row][col];
-						}
-					}
-					parents[1]->Backward(negUpstreamGrad);
-				}
-				break;
-			case Op::MUL:
-				if (parents[0] != nullptr)
-				{
-					Matrix grad0 = Transpose(upstreamGrad) * (*parents[1]);
-					parents[0]->Backward(Transpose(grad0));
-				}
-				if (parents[1] != nullptr)
-				{
-					Matrix grad1 = Transpose(*parents[0]) * upstreamGrad;
-					parents[1]->Backward(grad1);
-				}
-				break;
-			case Op::NONE:
-				break;
-		}
+		return *this;
 	}
 
-	vector<vector<double>> Matrix::GetGrad() const
+	Matrix& Matrix::operator=(Matrix&& other) noexcept
 	{
-		return grad;
+		if (this != &other)
+		{
+			if (matrix != nullptr)
+			{
+				delete[] matrix;
+			}
+
+			dimensions[0] = other.dimensions[0];
+			dimensions[1] = other.dimensions[1];
+			matrix = other.matrix;
+
+			other.dimensions[0] = 0;
+			other.dimensions[1] = 0;
+			other.matrix = nullptr;
+		}
+		return *this;
 	}
 
-	vector<vector<double>> Matrix::GetMatrix() const
+	const double* Matrix::operator[] (int index) const
+	{
+		if (index < 0 || index >= this->dimensions[0]) {
+			throw std::out_of_range("Index out of bounds");
+		}
+
+		return this->matrix + (index * this->dimensions[1]);
+	}
+
+	double* Matrix::operator[] (int index)
+	{
+		if (index < 0 || index >= this->dimensions[0]) {
+			throw std::out_of_range("Index out of bounds");
+		}
+
+		return this->matrix + (index * this->dimensions[1]);
+	}
+
+	double* Matrix::GetMatrix() const
 	{
 		return matrix;
 	}
 
-	void Matrix::ZeroGrad()
+	int Matrix::Rows() const
 	{
-		for (int row = 0; row < grad.size(); row++)
-		{
-			for (int col = 0; col < grad[0].size(); col++)
-			{
-				grad[row][col] = 0;
-			}
-		}
+		return this->dimensions[0];
+	}
+
+	int Matrix::Cols() const
+	{
+		return this->dimensions[1];
 	}
 
 	vector<int> Matrix::Dimensions() const
 	{
-		vector<int> dimensions;
-		dimensions.push_back(this->matrix.size()); //Rows
-		dimensions.push_back(this->matrix[0].size()); //Cols
-		return dimensions;
+		return vector<int>{ this->dimensions[0], this->dimensions[1] };
 	}
 
 	template <typename T>
-	vector<T> Matrix::Flatten(const vector<vector<T>> v)
+	vector<T> Matrix::ToArray(const Matrix v)
 	{
 		vector<T> flat;
-		for (int row = 0; row < v.size(); row++)
+		for (int row = 0; row < v.dimensions[0]; row++)
 		{
-			for (int col = 0; col < v[0].size(); col++)
+			for (int col = 0; col < v.dimensions[1]; col++)
 			{
 				flat.push_back(v[row][col]);
 			}
@@ -520,12 +526,12 @@ namespace matrix
 
 	Matrix Matrix::Transpose(const Matrix& matrix)
 	{
-		Matrix transposed = Matrix(matrix.matrix[0].size(), matrix.matrix.size());
-		for (int row = 0; row < matrix.matrix.size(); row++)
+		Matrix transposed = Matrix(matrix.dimensions[1], matrix.dimensions[0]);
+		for (int row = 0; row < matrix.dimensions[0]; row++)
 		{
-			for (int col = 0; col < matrix.matrix[0].size(); col++)
+			for (int col = 0; col < matrix.dimensions[1]; col++)
 			{
-				transposed[col][row] = matrix.matrix[row][col];
+				transposed[col][row] = matrix[row][col];
 			}
 		}
 		return transposed;
