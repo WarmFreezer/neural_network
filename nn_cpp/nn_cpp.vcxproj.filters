@@ -30,9 +30,4 @@
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
-  <ItemGroup>
-    <None Include="poker+hand\poker-hand.names" />
-    <None Include="poker+hand\poker-hand-training-true.data" />
-    <None Include="poker+hand\poker-hand-testing.data" />
-  </ItemGroup>
 </Project>

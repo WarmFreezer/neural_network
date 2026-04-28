@@ -141,11 +141,6 @@
     <ClInclude Include="Matrix.h" />
     <ClInclude Include="nn.cpp" />
   </ItemGroup>
-  <ItemGroup>
-    <None Include="poker+hand\poker-hand-testing.data" />
-    <None Include="poker+hand\poker-hand-training-true.data" />
-    <None Include="poker+hand\poker-hand.names" />
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
