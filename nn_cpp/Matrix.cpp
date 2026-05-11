@@ -250,7 +250,7 @@ namespace matrix
 
 			Matrix productMatrix(n, m);
 
-#pragma omp parallel for 
+//#pragma omp parallel for 
 			for (int row = 0; row < n; row++)
 			{
 				for (int col = 0; col < m; col++)

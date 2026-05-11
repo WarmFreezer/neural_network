@@ -78,6 +78,9 @@ public:
 		}
 	}
 
+	Activation(const Activation& other)
+		: type(other.type), lastInput(other.lastInput), lastOutput(other.lastOutput) {}
+
 	Matrix Forward(const Matrix& input)
 	{
 		lastInput = input;
@@ -265,6 +268,11 @@ public:
 	AdamOptimizer(double learningRate = 0.001, double beta1 = 0.9, double beta2 = 0.999, double epsilon = 1e-8)
 		: learningRate(learningRate), beta1(beta1), beta2(beta2), epsilon(epsilon), timestep(0) {}
 
+	AdamOptimizer(const AdamOptimizer& other)
+		: learningRate(other.learningRate), beta1(other.beta1), beta2(other.beta2), 
+		  epsilon(other.epsilon), timestep(other.timestep), m(other.m), v(other.v), 
+		  initialized(other.initialized) {}
+
 	void Initialize(int rows, int cols)
 	{
 		m = Matrix(rows, cols);
@@ -331,6 +339,12 @@ public:
 
 		this->activation = activation;
 	}
+
+	DenseLayer(const DenseLayer& other)
+		: weights(other.weights), bias(other.bias), lastInput(other.lastInput),
+		  activation(other.activation), weightGradSum(other.weightGradSum),
+		  biasGradSum(other.biasGradSum), weightOptimizer(other.weightOptimizer),
+		  biasOptimizer(other.biasOptimizer), batchCount(other.batchCount) {}
 
 	void BeginBatch()
 	{
